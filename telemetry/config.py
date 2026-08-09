@@ -12,6 +12,7 @@ class Config:
     flush_interval_seconds: int
     mouse_dpi: int
     app_whitelist: set[str]
+    heatmap_collection_name: str = "keyboard_heatmap"
 
 
 APP_WHITELIST = {
@@ -56,6 +57,7 @@ def load_config(dotenv_path: str | None = None) -> Config:
         mongo_uri=mongo_uri,
         db_name=db_name,
         collection_name="telemetry",
+        heatmap_collection_name="keyboard_heatmap",
         flush_interval_seconds=_require_positive_int(
             os.getenv("FLUSH_INTERVAL_SECONDS"), 60, "FLUSH_INTERVAL_SECONDS"
         ),

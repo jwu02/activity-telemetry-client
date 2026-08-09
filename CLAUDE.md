@@ -68,27 +68,43 @@ Collectors write only to `TelemetryState`; `Storage` reads the snapshot and neve
 
 ### Data schema
 
-Each flush inserts one document into the `telemetry` collection:
+Each flush interval writes up to two documents, sharing one `createdAt` timestamp.
+
+`telemetry` collection (one document per flush):
 
 ```json
 {
   "createdAt": "2026-08-08T10:05:00Z",
-  "mouse": {
-    "leftClicks": 120,
-    "rightClicks": 8,
-    "movementMeters": 42.5
-  },
-  "keys": {
-    "A": 45,
-    "Return": 12
-  },
-  "apps": {
-    "Visual Studio Code": 180
-  }
+  "leftClicks": 120,
+  "rightClicks": 8,
+  "movementMeters": 42.5,
+  "keysPressed": 57
 }
 ```
 
-Field names are camelCase. `TelemetryState.snapshot()` sorts `keys` alphabetically so insertion order does not leak keystroke timing.
+`keyboard_heatmap` collection (one document per flush, only when keys were pressed):
+
+```json
+{
+  "createdAt": "2026-08-08T10:05:00Z",
+  "A": 45,
+  "Return": 12
+}
+```
+
+`keysPressed` is the total key presses in the interval (sum of the heatmap
+counts). Field names are camelCase. `TelemetryState.snapshot()` sorts the
+heatmap alphabetically so insertion order does not leak keystroke timing.
+App-usage time is still tracked in state for the unwired `AppCollector` but is
+not flushed.
+
+The telemetry and heatmap inserts are sequential, not transactional: if the
+heatmap insert fails, `flush()` returns `None` and the next flush interval
+re-inserts a duplicate telemetry document. This is accepted for this daemon.
+
+The schema changed from nested `mouse`/`keys`/`apps` fields to flat
+`telemetry` fields plus a separate `keyboard_heatmap` collection, so existing
+documents in the collection may be a mixed shape while old data ages out.
 
 ### Key modules
 

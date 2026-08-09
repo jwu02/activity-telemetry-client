@@ -86,6 +86,8 @@ git commit -m "feat: add heatmap_collection_name to config"
 - Modify: `telemetry/state.py` (the `snapshot` method)
 - Modify: `tests/test_state.py` (shape assertions + new `keysPressed` checks)
 - Modify: `tests/test_main.py` (the two snapshot assertions in `test_runner_preserves_state_when_flush_fails`)
+- Modify: `tests/test_keyboard.py` (the two `snap["keys"]` assertions)
+- Modify: `tests/test_mouse.py` (the three `snap["mouse"]` assertions)
 
 **Interfaces:**
 - Consumes: nothing from other tasks.
@@ -117,9 +119,17 @@ with:
     assert snap["keyboard_heatmap"]["A"] == 1
 ```
 
+In `tests/test_keyboard.py`:
+- In `test_keycode_extraction_from_vk`: `snap["keys"]["A"]` → `snap["keyboard_heatmap"]["A"]`.
+- In `test_unmapped_key_is_ignored`: `snap["keys"]` → `snap["keyboard_heatmap"]`.
+
+In `tests/test_mouse.py`:
+- In `test_click_callbacks_update_state`: `snap["mouse"]["leftClicks"]` → `snap["leftClicks"]`, `snap["mouse"]["rightClicks"]` → `snap["rightClicks"]`.
+- In `test_move_callback_tracks_distance`: `snap["mouse"]["movementMeters"]` → `snap["movementMeters"]`.
+
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `python -m pytest tests/test_state.py tests/test_main.py -v`
+Run: `python -m pytest tests/test_state.py tests/test_main.py tests/test_keyboard.py tests/test_mouse.py -v`
 Expected: FAIL on `KeyError: 'leftClicks'` (snapshot still returns the old nested shape)
 
 - [ ] **Step 3: Rewrite `snapshot()`**

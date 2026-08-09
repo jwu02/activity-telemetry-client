@@ -21,7 +21,7 @@ def test_keycode_extraction_from_vk():
     key.vk = 0  # "A"
     collector._on_press(key)
     snap = state.snapshot_and_clear()
-    assert snap["keys"]["A"] == 1
+    assert snap["keyboard_heatmap"]["A"] == 1
 
 def test_unmapped_key_is_ignored():
     state = TelemetryState()
@@ -31,4 +31,4 @@ def test_unmapped_key_is_ignored():
     key.vk = 999
     collector._on_press(key)
     snap = state.snapshot_and_clear()
-    assert snap["keys"] == {}
+    assert snap["keyboard_heatmap"] == {}
