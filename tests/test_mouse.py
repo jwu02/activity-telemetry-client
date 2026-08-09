@@ -29,8 +29,8 @@ def test_click_callbacks_update_state():
     collector._on_click(0, 0, Button.left, True)
     collector._on_click(0, 0, Button.right, True)
     snap = state.snapshot_and_clear()
-    assert snap["mouse"]["leftClicks"] == 2
-    assert snap["mouse"]["rightClicks"] == 1
+    assert snap["leftClicks"] == 2
+    assert snap["rightClicks"] == 1
 
 
 def test_move_callback_tracks_distance():
@@ -40,4 +40,4 @@ def test_move_callback_tracks_distance():
     collector._on_move(0, 0)
     collector._on_move(72, 0)
     snap = state.snapshot_and_clear()
-    assert abs(snap["mouse"]["movementMeters"] - 0.0254) < 1e-6
+    assert abs(snap["movementMeters"] - 0.0254) < 1e-6
