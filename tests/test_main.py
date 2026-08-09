@@ -35,7 +35,7 @@ def _patched_runner(config, storage, missing_permissions=None):
 def test_runner_start_flushes_at_least_once_and_stops_cleanly():
     config = make_config(flush_interval_seconds=0)
     storage = MagicMock()
-    storage.flush.return_value = "fake-id"
+    storage.flush.return_value = ["fake-id"]
 
     runner, MouseCollector, KeyboardCollector = _patched_runner(config, storage)
     runner.state.add_left_click()
@@ -58,7 +58,7 @@ def test_runner_start_flushes_at_least_once_and_stops_cleanly():
 def test_runner_disables_mouse_and_keyboard_when_permissions_missing():
     config = make_config(flush_interval_seconds=0)
     storage = MagicMock()
-    storage.flush.return_value = "fake-id"
+    storage.flush.return_value = ["fake-id"]
 
     runner, MouseCollector, KeyboardCollector = _patched_runner(
         config, storage, missing_permissions=["Input Monitoring", "Accessibility"]
@@ -102,7 +102,7 @@ def test_runner_preserves_state_when_flush_fails():
 def test_runner_sleeps_before_first_flush():
     config = make_config(flush_interval_seconds=300)
     storage = MagicMock()
-    storage.flush.return_value = "fake-id"
+    storage.flush.return_value = ["fake-id"]
 
     runner, *_ = _patched_runner(config, storage)
     runner.state.add_left_click()
@@ -113,10 +113,23 @@ def test_runner_sleeps_before_first_flush():
     assert storage.flush.call_count == 1
 
 
+def test_runner_clears_state_after_successful_flush():
+    config = make_config(flush_interval_seconds=300)
+    storage = MagicMock()
+    storage.flush.return_value = ["fake-id"]
+
+    runner, *_ = _patched_runner(config, storage)
+    runner.state.add_left_click()
+    runner._shutdown.set()
+    runner.start()
+
+    assert runner.state.snapshot()["leftClicks"] == 0
+
+
 def test_runner_does_not_flush_without_activity():
     config = make_config(flush_interval_seconds=300)
     storage = MagicMock()
-    storage.flush.return_value = "fake-id"
+    storage.flush.return_value = ["fake-id"]
 
     runner, *_ = _patched_runner(config, storage)
     runner._shutdown.set()

@@ -98,6 +98,14 @@ heatmap alphabetically so insertion order does not leak keystroke timing.
 App-usage time is still tracked in state for the unwired `AppCollector` but is
 not flushed.
 
+The telemetry and heatmap inserts are sequential, not transactional: if the
+heatmap insert fails, `flush()` returns `None` and the next flush interval
+re-inserts a duplicate telemetry document. This is accepted for this daemon.
+
+The schema changed from nested `mouse`/`keys`/`apps` fields to flat
+`telemetry` fields plus a separate `keyboard_heatmap` collection, so existing
+documents in the collection may be a mixed shape while old data ages out.
+
 ### Key modules
 
 - `telemetry/config.py` — `Config` dataclass and `load_config()`. Fails fast with `sys.exit(1)` if `MONGO_URI` is missing or numeric env vars are invalid.

@@ -13,7 +13,9 @@ class Storage:
         self._config = config
         self._client = _client or MongoClient(config.mongo_uri)
         self._collection = self._client[config.db_name][config.collection_name]
-        self._heatmap_collection = self._client[config.db_name][config.heatmap_collection_name]
+        self._heatmap_collection = self._client[config.db_name][
+            config.heatmap_collection_name
+        ]
 
     def flush(self, snapshot: dict[str, Any]) -> list[str] | None:
         now = datetime.now(timezone.utc)
@@ -35,7 +37,7 @@ class Storage:
                 result = collection.insert_one(document)
                 inserted_ids.append(str(result.inserted_id))
         except Exception as exc:
-            logger.exception("Failed to flush telemetry: %s", exc)
+            logger.exception("Failed to flush telemetry documents: %s", exc)
             return None
         logger.info("Flushed telemetry documents: %s", inserted_ids)
         return inserted_ids

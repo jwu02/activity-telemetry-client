@@ -85,6 +85,9 @@ def test_flush_returns_none_when_heatmap_insert_fails():
         storage._heatmap_collection, "insert_one", side_effect=RuntimeError("boom")
     ):
         assert storage.flush(snapshot) is None
+    # The telemetry document was inserted before the heatmap insert failed, so a
+    # retry on the next flush would re-insert a duplicate telemetry document.
+    assert len(list(client["test"]["telemetry"].find())) == 1
 
 
 def test_close_calls_client_close():
