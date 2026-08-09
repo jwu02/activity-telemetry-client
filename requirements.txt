@@ -1,0 +1,6 @@
+pynput>=1.7.6
+pymongo>=4.6.0
+pyobjc-framework-Cocoa>=10.0
+pyobjc-framework-Quartz>=10.0
+pyobjc-framework-ApplicationServices>=10.0
+python-dotenv>=1.0.0
