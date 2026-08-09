@@ -36,14 +36,13 @@ class TelemetryState:
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
-                "mouse": {
-                    "leftClicks": self._left_clicks,
-                    "rightClicks": self._right_clicks,
-                    "movementMeters": round(self._mouse_meters, 4),
-                },
+                "leftClicks": self._left_clicks,
+                "rightClicks": self._right_clicks,
+                "movementMeters": round(self._mouse_meters, 4),
+                "keysPressed": sum(self._keys.values()),
                 # Sort key counts alphabetically so insertion order does not
                 # leak information about keystroke sequences.
-                "keys": dict(sorted(self._keys.items())),
+                "keyboard_heatmap": dict(sorted(self._keys.items())),
                 "apps": dict(self._apps),
             }
 

@@ -95,8 +95,8 @@ def test_runner_preserves_state_when_flush_fails():
     runner.start()
 
     snap = runner.state.snapshot()
-    assert snap["mouse"]["leftClicks"] == 1
-    assert snap["keys"]["A"] == 1
+    assert snap["leftClicks"] == 1
+    assert snap["keyboard_heatmap"]["A"] == 1
 
 
 def test_runner_sleeps_before_first_flush():
