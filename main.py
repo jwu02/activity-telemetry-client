@@ -71,8 +71,8 @@ class Runner:
         if not self.state.has_activity():
             return
         snapshot = self.state.snapshot()
-        doc_id = self.storage.flush(snapshot)
-        if doc_id is None:
+        flush_result = self.storage.flush(snapshot)
+        if flush_result is None:
             logger.error("Flush failed; counters will retry on next flush")
             return
         self.state.clear()
@@ -86,8 +86,8 @@ class Runner:
         # Final flush
         if self.state.has_activity():
             snapshot = self.state.snapshot()
-            doc_id = self.storage.flush(snapshot)
-            if doc_id is None:
+            flush_result = self.storage.flush(snapshot)
+            if flush_result is None:
                 logger.error("Final flush failed: %s", snapshot)
             else:
                 self.state.clear()
