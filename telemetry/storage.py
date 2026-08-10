@@ -16,6 +16,21 @@ class Storage:
         self._heatmap_collection = self._client[config.db_name][
             config.heatmap_collection_name
         ]
+        self._create_ttl_indexes()
+
+    def _create_ttl_indexes(self) -> None:
+        for collection, ttl in (
+            (self._collection, self._config.collection_ttl_seconds),
+            (self._heatmap_collection, self._config.heatmap_ttl_seconds),
+        ):
+            try:
+                collection.create_index("createdAt", expireAfterSeconds=ttl)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to create TTL index on %s: %s",
+                    collection.name,
+                    exc,
+                )
 
     def flush(self, snapshot: dict[str, Any]) -> list[str] | None:
         now = datetime.now(timezone.utc)

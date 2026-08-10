@@ -95,3 +95,29 @@ def test_close_calls_client_close():
     storage = Storage(make_config(), _client=client)
     storage.close()
     client.close.assert_called_once()
+
+
+def test_storage_creates_ttl_indexes():
+    client = mongomock.MongoClient()
+    Storage(make_config(), _client=client)
+
+    telemetry_indexes = {
+        i["name"]: i for i in client["test"]["telemetry"].list_indexes()
+    }
+    heatmap_indexes = {
+        i["name"]: i for i in client["test"]["keyboard_heatmap"].list_indexes()
+    }
+    assert telemetry_indexes["createdAt_1"]["expireAfterSeconds"] == 31536000
+    assert heatmap_indexes["createdAt_1"]["expireAfterSeconds"] == 2592000
+
+
+def test_ttl_index_creation_failure_is_non_fatal():
+    client = MagicMock()
+    collection = MagicMock()
+    collection.create_index.side_effect = RuntimeError("index permission denied")
+    client.__getitem__.return_value.__getitem__.return_value = collection
+
+    # Storage.__init__ must not raise when index creation fails.
+    storage = Storage(make_config(), _client=client)
+
+    assert storage._collection is collection
