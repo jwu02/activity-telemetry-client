@@ -33,7 +33,7 @@ Configuration is loaded from `.env` (see `.env.example`). Required and notable v
 
 - `MONGO_URI` — required MongoDB connection string.
 - `ACTIVITY_DB_NAME` — database name (defaults to `activity-telemetry`).
-- `FLUSH_INTERVAL_SECONDS` — flush interval (defaults to `60`).
+- `FLUSH_INTERVAL_SECONDS` — flush interval (defaults to `300`).
 - `MOUSE_DPI` — mouse DPI used to convert pixel distance to meters (defaults to `72`).
 
 The app whitelist is hardcoded in `telemetry/config.py` (`APP_WHITELIST`). Bundle IDs for some apps are mapped to whitelist names in `telemetry/collectors/apps.py` (`BUNDLE_ID_TO_APP_NAME`) because `NSWorkspace.frontmostApplication().localizedName()` can vary.
@@ -105,6 +105,12 @@ re-inserts a duplicate telemetry document. This is accepted for this daemon.
 The schema changed from nested `mouse`/`keys`/`apps` fields to flat
 `telemetry` fields plus a separate `keyboard_heatmap` collection, so existing
 documents in the collection may be a mixed shape while old data ages out.
+
+Documents are automatically expired by MongoDB TTL indexes on `createdAt`:
+`telemetry` documents are deleted after 1 year and `keyboard_heatmap`
+documents after 1 month. `Storage` creates these indexes idempotently at
+startup; `scripts/create_ttl_indexes.py` applies them to an existing
+database.
 
 ### Key modules
 
