@@ -11,8 +11,10 @@ def test_load_config_reads_env(monkeypatch):
     assert cfg.db_name == "test-db"
     assert cfg.collection_name == "telemetry"
     assert cfg.heatmap_collection_name == "keyboard_heatmap"
-    assert cfg.flush_interval_seconds == 60
+    assert cfg.flush_interval_seconds == 300
     assert cfg.mouse_dpi == 72
+    assert cfg.collection_ttl_seconds == 31536000
+    assert cfg.heatmap_ttl_seconds == 2592000
     assert "Visual Studio Code" in cfg.app_whitelist
 
 

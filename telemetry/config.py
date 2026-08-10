@@ -13,6 +13,8 @@ class Config:
     mouse_dpi: int
     app_whitelist: set[str]
     heatmap_collection_name: str = "keyboard_heatmap"
+    collection_ttl_seconds: int = 31536000  # 1 year
+    heatmap_ttl_seconds: int = 2592000      # 30 days
 
 
 APP_WHITELIST = {
@@ -58,8 +60,10 @@ def load_config(dotenv_path: str | None = None) -> Config:
         db_name=db_name,
         collection_name="telemetry",
         heatmap_collection_name="keyboard_heatmap",
+        collection_ttl_seconds=31536000,
+        heatmap_ttl_seconds=2592000,
         flush_interval_seconds=_require_positive_int(
-            os.getenv("FLUSH_INTERVAL_SECONDS"), 60, "FLUSH_INTERVAL_SECONDS"
+            os.getenv("FLUSH_INTERVAL_SECONDS"), 300, "FLUSH_INTERVAL_SECONDS"
         ),
         mouse_dpi=_require_positive_int(
             os.getenv("MOUSE_DPI"), 72, "MOUSE_DPI"
