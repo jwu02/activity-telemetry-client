@@ -17,6 +17,14 @@ def main() -> None:
     cfg = load_config()
     client = MongoClient(cfg.mongo_uri)
     try:
+        existing = set(client[cfg.db_name].list_collection_names())
+        for name in (cfg.collection_name, cfg.heatmap_collection_name):
+            if name not in existing:
+                raise SystemExit(
+                    f"Collection {name!r} not found in database {cfg.db_name!r}; "
+                    "refusing to create TTL index on an empty collection."
+                )
+
         for name, ttl in (
             (cfg.collection_name, cfg.collection_ttl_seconds),
             (cfg.heatmap_collection_name, cfg.heatmap_ttl_seconds),

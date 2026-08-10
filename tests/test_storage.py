@@ -111,7 +111,7 @@ def test_storage_creates_ttl_indexes():
     assert heatmap_indexes["createdAt_1"]["expireAfterSeconds"] == 2592000
 
 
-def test_ttl_index_creation_failure_is_non_fatal():
+def test_ttl_index_creation_failure_is_non_fatal(caplog):
     client = MagicMock()
     collection = MagicMock()
     collection.create_index.side_effect = RuntimeError("index permission denied")
@@ -121,3 +121,6 @@ def test_ttl_index_creation_failure_is_non_fatal():
     storage = Storage(make_config(), _client=client)
 
     assert storage._collection is collection
+    # Both collections must be attempted even though each index creation fails.
+    assert collection.create_index.call_count == 2
+    assert "Failed to create TTL index" in caplog.text
