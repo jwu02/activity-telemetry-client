@@ -189,12 +189,19 @@ from Foundation import NSAutoreleasePool
 Replace with:
 
 ```python
+import ctypes
+import os
 import platform
+from ctypes import wintypes
 
 _IS_DARWIN = platform.system() == "Darwin"
 if _IS_DARWIN:
     from AppKit import NSWorkspace
     from Foundation import NSAutoreleasePool
+
+# ctypes.windll exists only on Windows. Tests patch this module attribute
+# on any platform; leave it None off-Windows so import never fails.
+_WINDLL = ctypes.windll if platform.system() == "Windows" else None
 ```
 
 - [ ] **Step 2: Add Windows frontmost-app implementation**
@@ -214,36 +221,54 @@ PROCESS_NAME_TO_APP_NAME: dict[str, str] = {
 }
 
 
+def _basename_exe(exe_path: str) -> str:
+    """Return the executable basename without extension, cross-platform.
+
+    Windows paths use backslashes; os.path.basename is host-dependent, so
+    normalize separators before splitting.
+    """
+    return exe_path.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+
+
+def _get_window_process_id(user32, hwnd: int) -> int | None:
+    """Return the process ID that owns the given window handle."""
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value or None
+
+
+def _process_display_name_from_pid(kernel32, pid: int) -> str | None:
+    """Return the mapped display name for a process, or None if unmapped."""
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    h_process = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h_process:
+        return None
+    try:
+        size = wintypes.DWORD(260)
+        buf = ctypes.create_unicode_buffer(size.value)
+        if kernel32.QueryFullProcessImageNameW(h_process, 0, buf, ctypes.byref(size)):
+            process_name = _basename_exe(buf.value)
+            return PROCESS_NAME_TO_APP_NAME.get(process_name)
+    finally:
+        kernel32.CloseHandle(h_process)
+    return None
+
+
 def _frontmost_app_name_windows() -> str | None:
     """Return the frontmost application name on Windows using ctypes/Win32."""
-    import ctypes
-    import os
-    from ctypes import wintypes
-
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
+    user32 = _WINDLL.user32
+    kernel32 = _WINDLL.kernel32
 
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return None
 
-    # Get the process name from the executable path.
-    pid = wintypes.DWORD()
-    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    h_process = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
-    if h_process:
-        try:
-            size = wintypes.DWORD(260)
-            buf = ctypes.create_unicode_buffer(size.value)
-            if kernel32.QueryFullProcessImageNameW(h_process, 0, buf, ctypes.byref(size)):
-                exe_path = buf.value
-                process_name = os.path.basename(exe_path).rsplit(".", 1)[0]
-                if process_name in PROCESS_NAME_TO_APP_NAME:
-                    return PROCESS_NAME_TO_APP_NAME[process_name]
-        finally:
-            kernel32.CloseHandle(h_process)
+    # Prefer a mapped display name from the process executable path.
+    pid = _get_window_process_id(user32, hwnd)
+    if pid is not None:
+        mapped = _process_display_name_from_pid(kernel32, pid)
+        if mapped is not None:
+            return mapped
 
     # Fallback: use window title (similar to localizedName on macOS).
     length = user32.GetWindowTextLengthW(hwnd) + 1
@@ -398,92 +423,100 @@ Append to the test file:
 ```python
 from unittest.mock import patch
 
+# label_for_keycode dispatches on platform.system(), so Windows-VK lookups
+# must run under a patched "Windows" platform (tests run on macOS too).
+
+
+def _windows_label(code: int) -> str | None:
+    with patch("telemetry.keymap.platform.system", return_value="Windows"):
+        return label_for_keycode(code)
+
 
 def test_windows_keycode_letters():
-    assert label_for_keycode(0x41) == "A"
-    assert label_for_keycode(0x5A) == "Z"
-    assert label_for_keycode(0x4D) == "M"
+    assert _windows_label(0x41) == "A"
+    assert _windows_label(0x5A) == "Z"
+    assert _windows_label(0x4D) == "M"
 
 
 def test_windows_keycode_numbers():
-    assert label_for_keycode(0x30) == "0"
-    assert label_for_keycode(0x35) == "5"
-    assert label_for_keycode(0x39) == "9"
+    assert _windows_label(0x30) == "0"
+    assert _windows_label(0x35) == "5"
+    assert _windows_label(0x39) == "9"
 
 
 def test_windows_keycode_modifiers():
-    assert label_for_keycode(0xA0) == "Left Shift"
-    assert label_for_keycode(0xA1) == "Right Shift"
-    assert label_for_keycode(0xA2) == "Left Ctrl"
-    assert label_for_keycode(0xA4) == "Left Option"
-    assert label_for_keycode(0x5B) == "Left Cmd"
-    assert label_for_keycode(0x5C) == "Right Cmd"
+    assert _windows_label(0xA0) == "Left Shift"
+    assert _windows_label(0xA1) == "Right Shift"
+    assert _windows_label(0xA2) == "Left Ctrl"
+    assert _windows_label(0xA4) == "Left Option"
+    assert _windows_label(0x5B) == "Left Cmd"
+    assert _windows_label(0x5C) == "Right Cmd"
 
 
 def test_windows_keycode_navigation():
-    assert label_for_keycode(0x25) == "Left Arrow"
-    assert label_for_keycode(0x26) == "Up Arrow"
-    assert label_for_keycode(0x27) == "Right Arrow"
-    assert label_for_keycode(0x28) == "Down Arrow"
-    assert label_for_keycode(0x21) == "Page Up"
-    assert label_for_keycode(0x22) == "Page Down"
-    assert label_for_keycode(0x23) == "End"
-    assert label_for_keycode(0x24) == "Home"
-    assert label_for_keycode(0x2E) == "Forward Delete"
+    assert _windows_label(0x25) == "Left Arrow"
+    assert _windows_label(0x26) == "Up Arrow"
+    assert _windows_label(0x27) == "Right Arrow"
+    assert _windows_label(0x28) == "Down Arrow"
+    assert _windows_label(0x21) == "Page Up"
+    assert _windows_label(0x22) == "Page Down"
+    assert _windows_label(0x23) == "End"
+    assert _windows_label(0x24) == "Home"
+    assert _windows_label(0x2E) == "Forward Delete"
 
 
 def test_windows_keycode_function_keys():
-    assert label_for_keycode(0x70) == "F1"
-    assert label_for_keycode(0x7B) == "F12"
-    assert label_for_keycode(0x83) == "F20"
+    assert _windows_label(0x70) == "F1"
+    assert _windows_label(0x7B) == "F12"
+    assert _windows_label(0x83) == "F20"
 
 
 def test_windows_keycode_punctuation():
-    assert label_for_keycode(0xC0) == "Section"
-    assert label_for_keycode(0xBB) == "Equal"
-    assert label_for_keycode(0xBD) == "Minus"
-    assert label_for_keycode(0xDB) == "Left Bracket"
-    assert label_for_keycode(0xDD) == "Right Bracket"
-    assert label_for_keycode(0xBA) == "Semicolon"
-    assert label_for_keycode(0xDE) == "Quote"
-    assert label_for_keycode(0xDC) == "Backslash"
-    assert label_for_keycode(0xBC) == "Comma"
-    assert label_for_keycode(0xBE) == "Period"
-    assert label_for_keycode(0xBF) == "Slash"
+    assert _windows_label(0xC0) == "Section"
+    assert _windows_label(0xBB) == "Equal"
+    assert _windows_label(0xBD) == "Minus"
+    assert _windows_label(0xDB) == "Left Bracket"
+    assert _windows_label(0xDD) == "Right Bracket"
+    assert _windows_label(0xBA) == "Semicolon"
+    assert _windows_label(0xDE) == "Quote"
+    assert _windows_label(0xDC) == "Backslash"
+    assert _windows_label(0xBC) == "Comma"
+    assert _windows_label(0xBE) == "Period"
+    assert _windows_label(0xBF) == "Slash"
 
 
 def test_windows_keycode_special():
-    assert label_for_keycode(0x0D) == "Return"
-    assert label_for_keycode(0x09) == "Tab"
-    assert label_for_keycode(0x20) == "Space"
-    assert label_for_keycode(0x08) == "Delete"
-    assert label_for_keycode(0x1B) == "Escape"
-    assert label_for_keycode(0x14) == "Caps Lock"
+    assert _windows_label(0x0D) == "Return"
+    assert _windows_label(0x09) == "Tab"
+    assert _windows_label(0x20) == "Space"
+    assert _windows_label(0x08) == "Delete"
+    assert _windows_label(0x1B) == "Escape"
+    assert _windows_label(0x14) == "Caps Lock"
 
 
 def test_windows_keycode_keypad():
-    assert label_for_keycode(0x60) == "Keypad 0"
-    assert label_for_keycode(0x69) == "Keypad 9"
-    assert label_for_keycode(0x6A) == "Keypad *"
-    assert label_for_keycode(0x6B) == "Keypad +"
-    assert label_for_keycode(0x6D) == "Keypad -"
-    assert label_for_keycode(0x6E) == "Keypad ."
-    assert label_for_keycode(0x6F) == "Keypad /"
+    assert _windows_label(0x60) == "Keypad 0"
+    assert _windows_label(0x69) == "Keypad 9"
+    assert _windows_label(0x6A) == "Keypad *"
+    assert _windows_label(0x6B) == "Keypad +"
+    assert _windows_label(0x6D) == "Keypad -"
+    assert _windows_label(0x6E) == "Keypad ."
+    assert _windows_label(0x6F) == "Keypad /"
 
 
 def test_windows_keycode_media():
-    assert label_for_keycode(0xAD) == "Mute"
-    assert label_for_keycode(0xAE) == "Volume Down"
-    assert label_for_keycode(0xAF) == "Volume Up"
+    assert _windows_label(0xAD) == "Mute"
+    assert _windows_label(0xAE) == "Volume Down"
+    assert _windows_label(0xAF) == "Volume Up"
 
 
 def test_windows_unknown_keycode_returns_none():
-    assert label_for_keycode(0x2C) is None   # Print Screen — excluded
-    assert label_for_keycode(0x91) is None   # Scroll Lock — excluded
-    assert label_for_keycode(0x13) is None   # Pause — excluded
-    assert label_for_keycode(0x2D) is None   # Insert — excluded
-    assert label_for_keycode(0x5D) is None   # Context Menu — excluded
-    assert label_for_keycode(999) is None    # Bogus code
+    assert _windows_label(0x2C) is None   # Print Screen — excluded
+    assert _windows_label(0x91) is None   # Scroll Lock — excluded
+    assert _windows_label(0x13) is None   # Pause — excluded
+    assert _windows_label(0x2D) is None   # Insert — excluded
+    assert _windows_label(0x5D) is None   # Context Menu — excluded
+    assert _windows_label(999) is None    # Bogus code
 
 
 def test_windows_keycode_dispatch():
@@ -526,19 +559,38 @@ git commit -m "test: add Windows keycode lookup and dispatch tests"
 **Interfaces:**
 - Consumes: `KeyboardCollector` from `telemetry.collectors.keyboard`
 
-- [ ] **Step 1: Add Windows-range VK integration tests**
+- [ ] **Step 1: Add `patch` to the import and append Windows-VK tests**
+
+Update the existing import in `tests/test_keyboard.py`:
+```python
+from unittest.mock import MagicMock, patch
+```
 
 Append to the test file:
 
 ```python
+# KeyboardCollector._on_press resolves labels through label_for_keycode(),
+# which dispatches on platform.system(). Windows-VK tests must run under a
+# patched "Windows" platform (tests run on macOS too).
+
+
+def _press_windows_vk(collector, vk, via_value=False):
+    key = MagicMock()
+    if via_value:
+        del key.vk  # No direct vk attribute
+        key.value = MagicMock()
+        key.value.vk = vk
+    else:
+        key.vk = vk
+    with patch("telemetry.keymap.platform.system", return_value="Windows"):
+        collector._on_press(key)
+
+
 def test_keycode_extraction_from_windows_vk():
     """KeyboardCollector maps Windows-range VK codes through the keymap."""
     state = TelemetryState()
-    cfg = make_config()
-    collector = KeyboardCollector(state, cfg)
-    key = MagicMock()
-    key.vk = 0x41  # Windows VK for "A"
-    collector._on_press(key)
+    collector = KeyboardCollector(state, make_config())
+    _press_windows_vk(collector, 0x41)  # Windows VK for "A"
     snap = state.snapshot_and_clear()
     assert snap["keyboard_heatmap"]["A"] == 1
 
@@ -546,12 +598,8 @@ def test_keycode_extraction_from_windows_vk():
 def test_windows_modifier_vk():
     """Windows modifier VKs map to UK Mac label names."""
     state = TelemetryState()
-    cfg = make_config()
-    collector = KeyboardCollector(state, cfg)
-
-    key = MagicMock()
-    key.vk = 0x5B  # Left Win → Left Cmd
-    collector._on_press(key)
+    collector = KeyboardCollector(state, make_config())
+    _press_windows_vk(collector, 0x5B)  # Left Win → Left Cmd
     snap = state.snapshot_and_clear()
     assert snap["keyboard_heatmap"]["Left Cmd"] == 1
 
@@ -559,11 +607,8 @@ def test_windows_modifier_vk():
 def test_windows_unmapped_key_is_ignored():
     """Windows-only keys (Print Screen, Scroll Lock, etc.) are ignored."""
     state = TelemetryState()
-    cfg = make_config()
-    collector = KeyboardCollector(state, cfg)
-    key = MagicMock()
-    key.vk = 0x2C  # Print Screen — excluded from Windows dict
-    collector._on_press(key)
+    collector = KeyboardCollector(state, make_config())
+    _press_windows_vk(collector, 0x2C)  # Print Screen — excluded from Windows dict
     snap = state.snapshot_and_clear()
     assert snap["keyboard_heatmap"] == {}
 
@@ -571,13 +616,8 @@ def test_windows_unmapped_key_is_ignored():
 def test_windows_keycode_extraction_from_value_vk():
     """On Windows pynput, the VK may be at key.value.vk."""
     state = TelemetryState()
-    cfg = make_config()
-    collector = KeyboardCollector(state, cfg)
-    key = MagicMock()
-    del key.vk  # No direct vk attribute
-    key.value = MagicMock()
-    key.value.vk = 0x0D  # Return
-    collector._on_press(key)
+    collector = KeyboardCollector(state, make_config())
+    _press_windows_vk(collector, 0x0D, via_value=True)  # Return
     snap = state.snapshot_and_clear()
     assert snap["keyboard_heatmap"]["Return"] == 1
 ```
@@ -585,7 +625,7 @@ def test_windows_keycode_extraction_from_value_vk():
 - [ ] **Step 2: Run keyboard tests**
 
 Run: `python -m pytest tests/test_keyboard.py -v`
-Expected: All tests PASS (7 total: 2 existing + 4 new + existing unmapped test).
+Expected: All tests PASS (6 total: 2 existing + 4 new).
 
 - [ ] **Step 3: Commit**
 
@@ -621,6 +661,27 @@ Append to the test file:
 
 ```python
 # --- Windows app collector tests ---
+#
+# All Windows-path tests patch `telemetry.collectors.apps._WINDLL` (the
+# module-global that is None off-Windows) rather than ctypes.windll, so they
+# run on any platform. ctypes.windll itself does not exist on macOS.
+
+
+def _windll_context(exe_path=None, title="My App Window"):
+    """Return a patched _WINDLL mock + its MagicMock, wired for a window."""
+    mock_windll = MagicMock()
+    mock_windll.user32.GetForegroundWindow.return_value = 0x12345
+    mock_windll.user32.GetWindowTextLengthW.return_value = len(title)
+    mock_windll.kernel32.OpenProcess.return_value = 0xABC  # truthy handle
+    if exe_path is not None:
+        # QueryFullProcessImageNameW writes the exe path into the unicode buffer.
+        mock_windll.kernel32.QueryFullProcessImageNameW.side_effect = (
+            lambda hproc, flags, buf, size: setattr(buf, "value", exe_path)
+        )
+    mock_windll.user32.GetWindowTextW.side_effect = (
+        lambda hwnd, buf, length: setattr(buf, "value", title)
+    )
+    return patch("telemetry.collectors.apps._WINDLL", mock_windll), mock_windll
 
 
 def test_process_name_mapping_targets_are_whitelisted():
@@ -634,59 +695,61 @@ def test_process_name_mapping_targets_are_whitelisted():
 
 def test_frontmost_app_name_windows_maps_known_process():
     """When the exe name matches a mapping, return the display name."""
-    with patch("telemetry.collectors.apps.ctypes.windll.user32.GetForegroundWindow", return_value=0x12345), \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowThreadProcessId") as mock_pid, \
-         patch("telemetry.collectors.apps.ctypes.windll.kernel32.OpenProcess", return_value=0xABC), \
-         patch("telemetry.collectors.apps.ctypes.windll.kernel32.QueryFullProcessImageNameW") as mock_query, \
-         patch("telemetry.collectors.apps.ctypes.windll.kernel32.CloseHandle"), \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowTextW") as mock_text, \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowTextLengthW", return_value=10):
-
-        mock_pid.side_effect = lambda hwnd, buf: setattr(buf, 'value', 42)
-        mock_query.side_effect = lambda hproc, flags, buf, size: setattr(buf, 'value', r'C:\Program Files\Google\Chrome\Application\chrome.exe')
-
+    windll_patch, _mock_windll = _windll_context(
+        exe_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    )
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=42):
         result = _frontmost_app_name_windows()
-        assert result == "Google Chrome"
+    assert result == "Google Chrome"
 
 
 def test_frontmost_app_name_windows_falls_back_to_window_title():
     """When the exe name isn't mapped, fall back to the window title."""
-    with patch("telemetry.collectors.apps.ctypes.windll.user32.GetForegroundWindow", return_value=0x12345), \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowThreadProcessId") as mock_pid, \
-         patch("telemetry.collectors.apps.ctypes.windll.kernel32.OpenProcess", return_value=0xABC), \
-         patch("telemetry.collectors.apps.ctypes.windll.kernel32.QueryFullProcessImageNameW") as mock_query, \
-         patch("telemetry.collectors.apps.ctypes.windll.kernel32.CloseHandle"), \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowTextW") as mock_text, \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowTextLengthW", return_value=10):
-
-        mock_pid.side_effect = lambda hwnd, buf: setattr(buf, 'value', 42)
-        mock_query.side_effect = lambda hproc, flags, buf, size: setattr(buf, 'value', r'C:\Program Files\Spotify\spotify.exe')
-        mock_text.side_effect = lambda hwnd, buf, length: setattr(buf, 'value', 'Spotify Premium')
-
+    windll_patch, _mock_windll = _windll_context(
+        exe_path=r"C:\Program Files\Spotify\spotify.exe", title="Spotify Premium"
+    )
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=42):
         result = _frontmost_app_name_windows()
-        assert result == "Spotify Premium"
+    assert result == "Spotify Premium"
 
 
 def test_frontmost_app_name_windows_returns_none_when_no_window():
     """When there's no foreground window, return None."""
-    with patch("telemetry.collectors.apps.ctypes.windll.user32.GetForegroundWindow", return_value=0):
+    windll_patch, mock_windll = _windll_context()
+    mock_windll.user32.GetForegroundWindow.return_value = 0
+    with windll_patch:
         result = _frontmost_app_name_windows()
-        assert result is None
+    assert result is None
 
 
 def test_frontmost_app_name_windows_handles_openprocess_failure():
     """When OpenProcess fails, fall back to window title."""
-    with patch("telemetry.collectors.apps.ctypes.windll.user32.GetForegroundWindow", return_value=0x12345), \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowThreadProcessId") as mock_pid, \
-         patch("telemetry.collectors.apps.ctypes.windll.kernel32.OpenProcess", return_value=0), \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowTextW") as mock_text, \
-         patch("telemetry.collectors.apps.ctypes.windll.user32.GetWindowTextLengthW", return_value=10):
-
-        mock_pid.side_effect = lambda hwnd, buf: setattr(buf, 'value', 42)
-        mock_text.side_effect = lambda hwnd, buf, length: setattr(buf, 'value', 'My App Window')
-
+    windll_patch, mock_windll = _windll_context(title="My App Window")
+    mock_windll.kernel32.OpenProcess.return_value = 0  # falsy handle
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=42):
         result = _frontmost_app_name_windows()
-        assert result == "My App Window"
+    assert result == "My App Window"
+
+
+def test_frontmost_app_name_windows_returns_none_with_blank_title():
+    """When the window title is empty, return None (no mapping, no title)."""
+    windll_patch, _mock_windll = _windll_context(title="")
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=None):
+        result = _frontmost_app_name_windows()
+    assert result is None
+
+
+def test_basename_exe_cross_platform():
+    """Basename extraction works for Windows paths on any host OS."""
+    from telemetry.collectors.apps import _basename_exe
+
+    assert _basename_exe(r"C:\Program Files\Google\Chrome\Application\chrome.exe") == "chrome"
+    assert _basename_exe("/usr/bin/code") == "code"
+    assert _basename_exe("C:\\Windows\\System32\\notepad.exe") == "notepad"
 ```
 
 - [ ] **Step 3: Run app collector tests**
