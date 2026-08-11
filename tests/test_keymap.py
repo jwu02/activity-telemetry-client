@@ -1,4 +1,4 @@
-from telemetry.keymap import label_for_keycode, LABEL_FOR_KEYCODE
+from telemetry.keymap import label_for_keycode, LABEL_FOR_KEYCODE_MACOS
 
 def test_known_letters():
     assert label_for_keycode(0) == "A"
@@ -16,6 +16,6 @@ def test_unknown_keycode():
     assert label_for_keycode(999) is None
 
 def test_all_labels_are_strings():
-    for code, label in LABEL_FOR_KEYCODE.items():
+    for code, label in LABEL_FOR_KEYCODE_MACOS.items():
         assert isinstance(code, int)
         assert isinstance(label, str)
