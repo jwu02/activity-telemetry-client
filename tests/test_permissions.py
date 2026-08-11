@@ -25,3 +25,10 @@ def test_check_permissions_reports_none_missing():
     with patch("telemetry.permissions._input_monitoring_checker", return_value=True), \
          patch("telemetry.permissions._accessibility_checker", return_value=True):
         assert check_permissions() == []
+
+
+def test_check_permissions_returns_empty_on_non_macos():
+    """On non-macOS, the checkers are None so check_permissions returns []."""
+    with patch("telemetry.permissions._input_monitoring_checker", None), \
+         patch("telemetry.permissions._accessibility_checker", None):
+        assert check_permissions() == []
