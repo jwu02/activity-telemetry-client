@@ -36,14 +36,15 @@ BUNDLE_ID_TO_APP_NAME: dict[str, str] = {
 }
 
 # Windows process-name → display-name mapping, equivalent to
-# BUNDLE_ID_TO_APP_NAME on macOS.
+# BUNDLE_ID_TO_APP_NAME on macOS. Keys are lowercase: Windows exe names are
+# case-insensitive, and lookups lowercase the basename before comparing.
 PROCESS_NAME_TO_APP_NAME: dict[str, str] = {
     "chrome": "Google Chrome",
-    "Code": "Visual Studio Code",
-    "Ghostty": "Ghostty",
+    "code": "Visual Studio Code",
+    "ghostty": "Ghostty",
     "anki": "Anki",
-    "Notion": "Notion",
-    "Obsidian": "Obsidian",
+    "notion": "Notion",
+    "obsidian": "Obsidian",
 }
 
 
@@ -74,7 +75,9 @@ def _process_display_name_from_pid(kernel32, pid: int) -> str | None:
         buf = ctypes.create_unicode_buffer(size.value)
         if kernel32.QueryFullProcessImageNameW(h_process, 0, buf, ctypes.byref(size)):
             process_name = _basename_exe(buf.value)
-            return PROCESS_NAME_TO_APP_NAME.get(process_name)
+            # Lowercase the basename: Windows exe names are case-insensitive,
+            # and dict keys are stored lowercase (e.g. ghostty.exe → "Ghostty").
+            return PROCESS_NAME_TO_APP_NAME.get(process_name.lower())
     finally:
         kernel32.CloseHandle(h_process)
     return None
@@ -82,6 +85,9 @@ def _process_display_name_from_pid(kernel32, pid: int) -> str | None:
 
 def _frontmost_app_name_windows() -> str | None:
     """Return the frontmost application name on Windows using ctypes/Win32."""
+    if _WINDLL is None:
+        # Non-Darwin, non-Windows host (e.g. Linux): nothing to query.
+        return None
     user32 = _WINDLL.user32
     kernel32 = _WINDLL.kernel32
 
