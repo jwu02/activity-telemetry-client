@@ -1,14 +1,24 @@
 from __future__ import annotations
 
+import ctypes
 import logging
+import os
+import platform
 import threading
 import time
-
-from AppKit import NSWorkspace
-from Foundation import NSAutoreleasePool
+from ctypes import wintypes
 
 from telemetry.config import Config
 from telemetry.state import TelemetryState
+
+_IS_DARWIN = platform.system() == "Darwin"
+if _IS_DARWIN:
+    from AppKit import NSWorkspace
+    from Foundation import NSAutoreleasePool
+
+# ctypes.windll exists only on Windows. Tests patch this module attribute
+# on any platform; leave it None off-Windows so import never fails.
+_WINDLL = ctypes.windll if platform.system() == "Windows" else None
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +34,74 @@ BUNDLE_ID_TO_APP_NAME: dict[str, str] = {
     "notion.id": "Notion",
     "md.obsidian": "Obsidian",
 }
+
+# Windows process-name → display-name mapping, equivalent to
+# BUNDLE_ID_TO_APP_NAME on macOS.
+PROCESS_NAME_TO_APP_NAME: dict[str, str] = {
+    "chrome": "Google Chrome",
+    "Code": "Visual Studio Code",
+    "Ghostty": "Ghostty",
+    "anki": "Anki",
+    "Notion": "Notion",
+    "Obsidian": "Obsidian",
+}
+
+
+def _basename_exe(exe_path: str) -> str:
+    """Return the executable basename without extension, cross-platform.
+
+    Windows paths use backslashes; os.path.basename is host-dependent, so
+    normalize separators before splitting.
+    """
+    return exe_path.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+
+
+def _get_window_process_id(user32, hwnd: int) -> int | None:
+    """Return the process ID that owns the given window handle."""
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value or None
+
+
+def _process_display_name_from_pid(kernel32, pid: int) -> str | None:
+    """Return the mapped display name for a process, or None if unmapped."""
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    h_process = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not h_process:
+        return None
+    try:
+        size = wintypes.DWORD(260)
+        buf = ctypes.create_unicode_buffer(size.value)
+        if kernel32.QueryFullProcessImageNameW(h_process, 0, buf, ctypes.byref(size)):
+            process_name = _basename_exe(buf.value)
+            return PROCESS_NAME_TO_APP_NAME.get(process_name)
+    finally:
+        kernel32.CloseHandle(h_process)
+    return None
+
+
+def _frontmost_app_name_windows() -> str | None:
+    """Return the frontmost application name on Windows using ctypes/Win32."""
+    user32 = _WINDLL.user32
+    kernel32 = _WINDLL.kernel32
+
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return None
+
+    # Prefer a mapped display name from the process executable path.
+    pid = _get_window_process_id(user32, hwnd)
+    if pid is not None:
+        mapped = _process_display_name_from_pid(kernel32, pid)
+        if mapped is not None:
+            return mapped
+
+    # Fallback: use window title (similar to localizedName on macOS).
+    length = user32.GetWindowTextLengthW(hwnd) + 1
+    buf = ctypes.create_unicode_buffer(length)
+    user32.GetWindowTextW(hwnd, buf, length)
+    title = buf.value
+    return title if title else None
 
 
 class AppCollector:
@@ -70,6 +148,11 @@ class AppCollector:
                 self._shutdown_event.set()
 
     def _frontmost_app_name(self) -> str | None:
+        if _IS_DARWIN:
+            return self._frontmost_app_name_darwin()
+        return _frontmost_app_name_windows()
+
+    def _frontmost_app_name_darwin(self) -> str | None:
         # NSWorkspace/AppKit calls from a background thread need an
         # autorelease pool, otherwise returned Objective-C objects can be
         # released before PyObjC bridges their values (e.g. localizedName
