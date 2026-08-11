@@ -99,7 +99,7 @@ def run() -> None:
     missing = check_permissions()
     if missing:
         logger.warning(
-            "Missing macOS permissions: %s. "
+            "Missing permissions: %s. "
             "Mouse/keyboard tracking will be disabled. "
             "Grant them in System Settings -> Privacy & Security for full telemetry.",
             ", ".join(missing),
