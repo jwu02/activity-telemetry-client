@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, call, patch
 
 from telemetry.state import TelemetryState
 from telemetry.config import Config
-from telemetry.collectors.apps import AppCollector, BUNDLE_ID_TO_APP_NAME
+from telemetry.collectors.apps import AppCollector, BUNDLE_ID_TO_APP_NAME, PROCESS_NAME_TO_APP_NAME, _frontmost_app_name_windows
 
 
 def make_config() -> Config:
@@ -153,3 +153,100 @@ def test_crash_signals_shutdown():
         assert not collector._thread.is_alive()
         assert shutdown_event.is_set()
         collector.stop()
+
+
+# --- Windows app collector tests ---
+#
+# All Windows-path tests patch `telemetry.collectors.apps._WINDLL` (the
+# module-global that is None off-Windows) rather than ctypes.windll, so they
+# run on any platform. ctypes.windll itself does not exist on macOS.
+
+
+def _windll_context(exe_path=None, title="My App Window"):
+    """Return a patched _WINDLL mock + its MagicMock, wired for a window."""
+    mock_windll = MagicMock()
+    mock_windll.user32.GetForegroundWindow.return_value = 0x12345
+    mock_windll.user32.GetWindowTextLengthW.return_value = len(title)
+    mock_windll.kernel32.OpenProcess.return_value = 0xABC  # truthy handle
+    if exe_path is not None:
+        # QueryFullProcessImageNameW writes the exe path into the unicode buffer.
+        # It must also return TRUE (1): the implementation guards on the return
+        # value (`if kernel32.QueryFullProcessImageNameW(...)`), and a side_effect
+        # lambda that only calls setattr returns None, which is falsy.
+        def _query_full_process_image_name(hproc, flags, buf, size):
+            setattr(buf, "value", exe_path)
+            return 1  # Win32 BOOL TRUE
+
+        mock_windll.kernel32.QueryFullProcessImageNameW.side_effect = _query_full_process_image_name
+    mock_windll.user32.GetWindowTextW.side_effect = (
+        lambda hwnd, buf, length: setattr(buf, "value", title)
+    )
+    return patch("telemetry.collectors.apps._WINDLL", mock_windll), mock_windll
+
+
+def test_process_name_mapping_targets_are_whitelisted():
+    """Every Windows process name mapping must point to an app in the default whitelist."""
+    from telemetry.config import APP_WHITELIST
+
+    mapped = set(PROCESS_NAME_TO_APP_NAME.values())
+    not_whitelisted = mapped - set(APP_WHITELIST)
+    assert not not_whitelisted, f"Process name mapping targets not whitelisted: {not_whitelisted}"
+
+
+def test_frontmost_app_name_windows_maps_known_process():
+    """When the exe name matches a mapping, return the display name."""
+    windll_patch, _mock_windll = _windll_context(
+        exe_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    )
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=42):
+        result = _frontmost_app_name_windows()
+    assert result == "Google Chrome"
+
+
+def test_frontmost_app_name_windows_falls_back_to_window_title():
+    """When the exe name isn't mapped, fall back to the window title."""
+    windll_patch, _mock_windll = _windll_context(
+        exe_path=r"C:\Program Files\Spotify\spotify.exe", title="Spotify Premium"
+    )
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=42):
+        result = _frontmost_app_name_windows()
+    assert result == "Spotify Premium"
+
+
+def test_frontmost_app_name_windows_returns_none_when_no_window():
+    """When there's no foreground window, return None."""
+    windll_patch, mock_windll = _windll_context()
+    mock_windll.user32.GetForegroundWindow.return_value = 0
+    with windll_patch:
+        result = _frontmost_app_name_windows()
+    assert result is None
+
+
+def test_frontmost_app_name_windows_handles_openprocess_failure():
+    """When OpenProcess fails, fall back to window title."""
+    windll_patch, mock_windll = _windll_context(title="My App Window")
+    mock_windll.kernel32.OpenProcess.return_value = 0  # falsy handle
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=42):
+        result = _frontmost_app_name_windows()
+    assert result == "My App Window"
+
+
+def test_frontmost_app_name_windows_returns_none_with_blank_title():
+    """When the window title is empty, return None (no mapping, no title)."""
+    windll_patch, _mock_windll = _windll_context(title="")
+    with windll_patch, \
+         patch("telemetry.collectors.apps._get_window_process_id", return_value=None):
+        result = _frontmost_app_name_windows()
+    assert result is None
+
+
+def test_basename_exe_cross_platform():
+    """Basename extraction works for Windows paths on any host OS."""
+    from telemetry.collectors.apps import _basename_exe
+
+    assert _basename_exe(r"C:\Program Files\Google\Chrome\Application\chrome.exe") == "chrome"
+    assert _basename_exe("/usr/bin/code") == "code"
+    assert _basename_exe("C:\\Windows\\System32\\notepad.exe") == "notepad"
