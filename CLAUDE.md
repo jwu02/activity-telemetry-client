@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Activity Telemetry Client is a macOS Python daemon that collects mouse, keyboard, and (optionally) frontmost-application activity and flushes batched documents to MongoDB Atlas.
+Activity Telemetry Client is a Python daemon (macOS primary, with partial Windows support in the collectors) that collects mouse, keyboard, and (optionally) frontmost-application activity and flushes batched documents to MongoDB Atlas.
 
 ## Common commands
 
@@ -36,17 +36,16 @@ Configuration is loaded from `.env` (see `.env.example`). Required and notable v
 - `FLUSH_INTERVAL_SECONDS` — flush interval (defaults to `300`).
 - `MOUSE_DPI` — mouse DPI used to convert pixel distance to meters (defaults to `72`).
 
-The app whitelist is hardcoded in `telemetry/config.py` (`APP_WHITELIST`). Bundle IDs for some apps are mapped to whitelist names in `telemetry/collectors/apps.py` (`BUNDLE_ID_TO_APP_NAME`) because `NSWorkspace.frontmostApplication().localizedName()` can vary.
+The app whitelist is hardcoded in `telemetry/config.py` (`APP_WHITELIST`). `telemetry/collectors/apps.py` maps OS-specific identities to whitelist names: `BUNDLE_ID_TO_APP_NAME` on macOS (because `NSWorkspace.frontmostApplication().localizedName()` can vary by locale/install) and `PROCESS_NAME_TO_APP_NAME` on Windows (lowercased exe basenames).
 
 ## macOS permissions
 
 The client requires macOS Privacy & Security permissions:
 
-- **Input Monitoring** — required for the mouse listener.
-- **Accessibility** — required for the keyboard listener.
-- **Accessibility** — required to read the frontmost application.
+- **Input Monitoring** — required for the mouse listener and the keyboard listener.
+- **Accessibility** — required for the keyboard listener and to read the frontmost application.
 
-`telemetry/permissions.py` checks these at startup. `main.py` disables the corresponding collector when a permission is missing rather than exiting.
+`telemetry/permissions.py` checks these at startup; `main.py` disables the corresponding collector when a permission is missing rather than exiting. The keyboard listener is only started when both Input Monitoring and Accessibility are present. These checks are macOS-only — on other platforms `check_permissions()` returns an empty list.
 
 ## Architecture
 
@@ -117,11 +116,11 @@ database.
 - `telemetry/config.py` — `Config` dataclass and `load_config()`. Fails fast with `sys.exit(1)` if `MONGO_URI` is missing or numeric env vars are invalid.
 - `telemetry/state.py` — `TelemetryState`, a thread-safe counter and map store with typed increment helpers.
 - `telemetry/storage.py` — `Storage` wraps `pymongo.MongoClient` and inserts flush documents. Accepts an optional `_client` argument for tests.
-- `telemetry/keymap.py` — macOS virtual-keycode → UK Mac QWERTY physical-label map used by the keyboard collector.
+- `telemetry/keymap.py` — virtual-keycode → UK Mac QWERTY physical-label maps for macOS (`LABEL_FOR_KEYCODE_MACOS`) and Windows VK (`LABEL_FOR_KEYCODE_WINDOWS`), dispatched via `platform.system()`. Not currently used by the keyboard collector (which tracks key values directly); referenced by its own tests.
 - `telemetry/collectors/mouse.py` — `pynput` mouse listener; counts clicks and accumulates Euclidean movement distance converted to meters via `MOUSE_DPI`.
-- `telemetry/collectors/keyboard.py` — `pynput` keyboard listener; maps keycodes to labels via `keymap.py` and ignores unmapped keys.
-- `telemetry/collectors/apps.py` — Polls `NSWorkspace` every second and records elapsed time for whitelisted apps. Uses `NSAutoreleasePool` because AppKit calls run on a background thread.
-- `telemetry/permissions.py` — macOS-only permission checks using `Quartz` and `ApplicationServices`.
+- `telemetry/collectors/keyboard.py` — `pynput` keyboard listener that counts key *values*, not physical positions: printable keys use the uppercased `char`, special/function keys map through `_SPECIAL_KEY_LABELS`. A `_held_keys` set de-dupes macOS key auto-repeat, so holding a key counts once until release. Unmapped keys are ignored.
+- `telemetry/collectors/apps.py` — Polls the frontmost app and records elapsed time for whitelisted apps. On macOS polls `NSWorkspace` (using `NSAutoreleasePool` because AppKit calls run on a background thread); on Windows uses `ctypes`/Win32 (`GetForegroundWindow` → process exe name → `PROCESS_NAME_TO_APP_NAME`, window title as fallback).
+- `telemetry/permissions.py` — macOS permission checks using `Quartz` and `ApplicationServices`; guarded so it imports and returns an empty list on non-macOS.
 
 ## Testing
 
