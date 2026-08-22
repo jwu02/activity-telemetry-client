@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from pynput.keyboard import Key, KeyCode
 
 from telemetry.config import Config
-from telemetry.collectors.keyboard import KeyboardCollector
+from telemetry.collectors.keyboard import KeyboardCollector, _FnGlobeWatcher
 from telemetry.state import TelemetryState
 
 
@@ -355,3 +355,87 @@ def test_char_attribute_is_none():
 
 def test_label_for_key_with_none():
     assert KeyboardCollector._label_for_key(None) is None
+
+
+# ---------------------------------------------------------------------------
+# macOS fn/globe key (_FnGlobeWatcher)
+#
+# The fn/globe key (keycode 63) is delivered to a Quartz event tap as
+# kCGEventFlagsChanged, and pynput never reports its press. The watcher
+# decides press/release from the macOS fn flag bit in the event flags.
+# Tests drive _handle_flags directly with real observed flag masks:
+#   0x00800100  fn down (fn bit 0x00800000 + non-coalesced 0x00000100)
+#   0x00000100  fn up
+#   0x00020000  Shift held
+# ---------------------------------------------------------------------------
+
+def test_fn_globe_press_counts_once():
+    state = TelemetryState()
+    watcher = _FnGlobeWatcher(state)
+    watcher._handle_flags(0x3F, 0x00800100)  # fn down
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {"Fn": 1}
+    assert snap["keysPressed"] == 1
+
+
+def test_fn_globe_press_release_counts_once():
+    state = TelemetryState()
+    watcher = _FnGlobeWatcher(state)
+    watcher._handle_flags(0x3F, 0x00800100)  # down
+    watcher._handle_flags(0x3F, 0x00000100)  # up
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {"Fn": 1}
+    assert snap["keysPressed"] == 1
+
+
+def test_fn_globe_repeat_press_counts_again():
+    state = TelemetryState()
+    watcher = _FnGlobeWatcher(state)
+    for _ in range(2):
+        watcher._handle_flags(0x3F, 0x00800100)  # down
+        watcher._handle_flags(0x3F, 0x00000100)  # up
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {"Fn": 2}
+
+
+def test_fn_globe_press_with_modifiers_held_counts_once():
+    """Holding Shift while tapping fn still counts one press."""
+    state = TelemetryState()
+    watcher = _FnGlobeWatcher(state)
+    watcher._handle_flags(0x3F, 0x00820100)  # fn + shift held at press
+    watcher._handle_flags(0x3F, 0x00020100)  # fn up, shift still held
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {"Fn": 1}
+
+
+def test_fn_globe_release_after_other_modifier_toggled_not_counted():
+    """fn release event carrying a newly-held modifier bit must not be a press.
+
+    Scenario: fn pressed, then Shift pressed, then fn released while Shift is
+    still held. The release event's flags include the Shift bit, but the fn
+    bit is absent, so no press is counted.
+    """
+    state = TelemetryState()
+    watcher = _FnGlobeWatcher(state)
+    watcher._handle_flags(0x3F, 0x00800100)  # fn down
+    watcher._handle_flags(0x3F, 0x00020100)  # fn up, shift now held
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {"Fn": 1}
+
+
+def test_fn_globe_ignores_flags_changed_for_other_keys():
+    state = TelemetryState()
+    watcher = _FnGlobeWatcher(state)
+    watcher._handle_flags(0x38, 0x00020100)  # shift flagsChanged, not fn
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {}
+
+
+def test_fn_globe_held_at_startup_release_not_counted():
+    """If fn is already held when the daemon starts, the first event is a
+    release (fn bit absent) and must not be counted."""
+    state = TelemetryState()
+    watcher = _FnGlobeWatcher(state)
+    watcher._handle_flags(0x3F, 0x00000100)  # fn was already down; release
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {}
