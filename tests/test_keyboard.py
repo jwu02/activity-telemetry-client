@@ -46,9 +46,9 @@ def test_lowercase_and_uppercase_merge():
     """Both 'a' and 'A' increment the same 'A' bucket."""
     state = TelemetryState()
     collector = KeyboardCollector(state, make_config())
-    collector._on_press(KeyCode.from_char("a"))
-    collector._on_press(KeyCode.from_char("A"))
-    collector._on_press(KeyCode.from_char("a"))
+    for key in [KeyCode.from_char("a"), KeyCode.from_char("A"), KeyCode.from_char("a")]:
+        collector._on_press(key)
+        collector._on_release(key)
     snap = state.snapshot_and_clear()
     assert snap["keyboard_heatmap"]["A"] == 3
     assert snap["keysPressed"] == 3
@@ -93,14 +93,67 @@ def test_printable_shifted_digit():
     assert snap["keyboard_heatmap"]["!"] == 1
 
 
-def test_accumulates_repeated_character():
+def test_accumulates_multiple_distinct_presses():
+    """Press/release cycles for the same key each count once."""
     state = TelemetryState()
     collector = KeyboardCollector(state, make_config())
+    key = KeyCode.from_char("e")
     for _ in range(5):
-        collector._on_press(KeyCode.from_char("e"))
+        collector._on_press(key)
+        collector._on_release(key)
     snap = state.snapshot_and_clear()
     assert snap["keyboard_heatmap"]["E"] == 5
     assert snap["keysPressed"] == 5
+
+
+def test_held_key_autorepeat_counts_once():
+    """Auto-repeat events while a key is held down are not counted."""
+    state = TelemetryState()
+    collector = KeyboardCollector(state, make_config())
+    key = KeyCode.from_char("e")
+    collector._on_press(key)
+    collector._on_press(key)  # auto-repeat from holding
+    collector._on_press(key)  # auto-repeat from holding
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"]["E"] == 1
+    assert snap["keysPressed"] == 1
+
+
+def test_held_special_key_counts_once():
+    """Holding Delete (backspace) produces many repeats but counts once."""
+    state = TelemetryState()
+    collector = KeyboardCollector(state, make_config())
+    collector._on_press(Key.backspace)
+    collector._on_press(Key.backspace)  # auto-repeat
+    collector._on_press(Key.backspace)  # auto-repeat
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"]["Delete"] == 1
+
+
+def test_release_then_press_counts_again():
+    """After a release, pressing the same key again counts again."""
+    state = TelemetryState()
+    collector = KeyboardCollector(state, make_config())
+    key = KeyCode.from_char("a")
+    collector._on_press(key)
+    collector._on_release(key)
+    collector._on_press(key)
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"]["A"] == 2
+
+
+def test_release_after_modifier_change_clears_held():
+    """The held-set uses the counted label, so a release event carrying a
+    different KeyCode (e.g. after Shift was released mid-hold) still clears
+    the key, and a later press is counted again."""
+    state = TelemetryState()
+    collector = KeyboardCollector(state, make_config())
+    collector._on_press(KeyCode.from_char("A"))    # held with Shift
+    collector._on_press(KeyCode.from_char("A"))    # auto-repeat
+    collector._on_release(KeyCode.from_char("a"))  # release after Shift up
+    collector._on_press(KeyCode.from_char("a"))    # fresh press
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"]["A"] == 2
 
 
 # ---------------------------------------------------------------------------
@@ -263,6 +316,16 @@ def test_none_key_ignored():
     state = TelemetryState()
     collector = KeyboardCollector(state, make_config())
     collector._on_press(None)
+    snap = state.snapshot_and_clear()
+    assert snap["keyboard_heatmap"] == {}
+
+
+def test_release_unmapped_or_none_key_no_error():
+    """Releasing keys we never counted (unmapped/None) is a safe no-op."""
+    state = TelemetryState()
+    collector = KeyboardCollector(state, make_config())
+    collector._on_release(KeyCode.from_vk(999))
+    collector._on_release(None)
     snap = state.snapshot_and_clear()
     assert snap["keyboard_heatmap"] == {}
 

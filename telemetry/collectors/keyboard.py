@@ -51,11 +51,18 @@ class KeyboardCollector:
     def __init__(self, state: TelemetryState, config: Config) -> None:
         self._state = state
         self._listener: Listener | None = None
+        # Labels of keys currently held down. macOS auto-repeats key-down
+        # events while a key is held, so a key already in this set is a repeat
+        # and must not be counted again.
+        self._held_keys: set[str] = set()
 
     def start(self) -> None:
         if self._listener is not None:
             return
-        self._listener = Listener(on_press=self._on_press)
+        self._listener = Listener(
+            on_press=self._on_press,
+            on_release=self._on_release,
+        )
         self._listener.start()
 
     def stop(self) -> None:
@@ -65,8 +72,18 @@ class KeyboardCollector:
 
     def _on_press(self, key: Key | KeyCode | None) -> None:
         label = self._label_for_key(key)
+        if label is None:
+            return
+        if label in self._held_keys:
+            # Auto-repeat from holding the key down; don't count it again.
+            return
+        self._held_keys.add(label)
+        self._state.add_key_press(label)
+
+    def _on_release(self, key: Key | KeyCode | None) -> None:
+        label = self._label_for_key(key)
         if label is not None:
-            self._state.add_key_press(label)
+            self._held_keys.discard(label)
 
     @staticmethod
     def _label_for_key(key: Key | KeyCode | None) -> str | None:
