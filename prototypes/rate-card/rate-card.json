@@ -1,0 +1,36 @@
+{
+  "_comment": "PROTOTYPE — abridged JSON rendering of rate-card.toml, for format comparison only.",
+  "schema": 1,
+  "currency": "CNY",
+  "aliases": {
+    "deepseek-v4-pro-202606": "deepseek-v4-pro",
+    "deepseek/deepseek-flash": "deepseek-v4.1-flash"
+  },
+  "cards": [
+    {
+      "match": "kimi-k3",
+      "rates": { "miss": 20.0, "hit": 2.0, "out": 100.0 }
+    },
+    {
+      "match": "deepseek-v4-pro",
+      "tz": "Asia/Shanghai",
+      "default": { "miss": 4.5, "hit": 0.15, "out": 13.5 },
+      "bands": [
+        {
+          "within": ["09:00-12:00", "14:00-18:00"],
+          "rates": { "miss": 9.0, "hit": 0.3, "out": 27.0 }
+        }
+      ]
+    },
+    {
+      "match": "glm-5.3-flash",
+      "to": "2026-08-01",
+      "rates": { "miss": 0.8, "hit": 0.23, "out": 2.8 }
+    },
+    {
+      "match": "glm-5.3-flash",
+      "from": "2026-08-01",
+      "rates": { "miss": 0.4, "hit": 0.115, "out": 1.4 }
+    }
+  ]
+}

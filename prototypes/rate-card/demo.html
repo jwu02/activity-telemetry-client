@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prototype — the rate-card file</title>
+<style>
+  :root {
+    --ink: #1c1e21;
+    --soft: #6b7280;
+    --line: #e3e6ea;
+    --bg: #fbfbfc;
+    --panel: #ffffff;
+    --accent: #3057d5;
+    --accent-soft: #eef2fd;
+    --good: #1c7a4a;
+    --bad: #b3261e;
+    --warn: #8a5a00;
+    --warn-soft: #fdf6e3;
+    --bad-soft: #fdeceb;
+    --good-soft: #eaf6ef;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 48px 24px 96px;
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 17px; margin: 44px 0 4px; letter-spacing: -0.005em; }
+  h3 { font-size: 14px; margin: 24px 0 6px; color: var(--soft);
+       text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+  p { margin: 8px 0; }
+  .lede { color: var(--soft); margin-bottom: 8px; }
+  .proto {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--warn); background: var(--warn-soft);
+    border: 1px solid #efe2bd; border-radius: 4px; padding: 2px 7px; margin-bottom: 12px;
+  }
+  .hint { color: var(--soft); font-size: 13px; }
+  section { background: var(--panel); border: 1px solid var(--line);
+            border-radius: 10px; padding: 20px 22px; margin-top: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line);
+           border-radius: 10px; padding: 20px 22px; margin-top: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px 20px; align-items: flex-end; }
+  label { display: block; font-size: 12px; color: var(--soft);
+          text-transform: uppercase; letter-spacing: .05em; font-weight: 600;
+          margin-bottom: 4px; }
+  select, input {
+    font: inherit; padding: 7px 9px; border: 1px solid var(--line);
+    border-radius: 6px; background: #fff; color: var(--ink); min-width: 120px;
+  }
+  input[type=number] { width: 118px; }
+  input[type=datetime-local] { min-width: 210px; }
+  button {
+    font: inherit; font-size: 13px; padding: 7px 12px; border-radius: 6px;
+    border: 1px solid var(--line); background: #fff; color: var(--ink);
+    cursor: pointer; transition: background .1s, border-color .1s;
+  }
+  button:hover { border-color: #c3c9d2; background: #fafbfd; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #2748bd; }
+  button.ghost { border-style: dashed; color: var(--soft); }
+  .step-row { display: flex; align-items: center; gap: 10px; }
+  .step-rows { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .step-rows .step-row { padding-left: 10px; border-left: 2px solid var(--line); }
+  .step-rows .step-row.active { border-left-color: var(--accent); }
+  .step-rows .step-row.done { border-left-color: var(--good); }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  code { background: #f4f5f7; padding: 1px 5px; border-radius: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+       color: var(--soft); font-weight: 600; }
+  tr.dim td { color: #9aa1ab; }
+  tr.hit td { background: var(--accent-soft); }
+  .verdict { margin-top: 16px; border-radius: 8px; padding: 14px 16px;
+             border: 1px solid var(--line); background: #fafbfd; }
+  .verdict.good { background: var(--good-soft); border-color: #cfe7da; }
+  .verdict.bad  { background: var(--bad-soft);  border-color: #f2d3d0; }
+  .verdict.none { background: var(--warn-soft); border-color: #efe2bd; }
+  .verdict .big { font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
+  .verdict .sub { color: var(--soft); font-size: 13px; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-top: 16px; flex-wrap: wrap; }
+  .tabs button { border: none; border-bottom: 2px solid transparent; border-radius: 0;
+                 background: none; padding: 8px 12px; color: var(--soft); }
+  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  pre { background: #f7f8fa; border: 1px solid var(--line); border-radius: 8px;
+        padding: 14px; overflow-x: auto; font-size: 12.5px; line-height: 1.55; margin: 12px 0 0; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+  .tag { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+         padding: 2px 7px; border-radius: 4px; }
+  .tag.ok { background: var(--good-soft); color: var(--good); }
+  .tag.no { background: var(--bad-soft); color: var(--bad); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  ul.notes { margin: 8px 0 0; padding-left: 20px; color: var(--soft); font-size: 13.5px; }
+  ul.notes li { margin: 3px 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="proto">Prototype — throwaway</div>
+  <h1>The rate-card file: format and rules</h1>
+  <p class="lede">
+    Does this shape let us say everything today's <code>PRICING</code> map says — including a
+    time-limited discount — and does the ported arithmetic agree with <code>computeCostYuan</code>?
+    Poke the controls, or run the walkthroughs.
+  </p>
+  <p class="hint">
+    The resolution logic below is a faithful copy of <code>ratecard.py</code>. The validation
+    verdicts are transcribed from that module's real output
+    (<code>python prototypes/rate-card/parity_check.py</code>).
+  </p>
+
+  <!-- ── controls ─────────────────────────────────────────────────────── -->
+  <h2>Price one request</h2>
+  <div class="panel">
+    <div class="controls">
+      <div>
+        <label for="model">Model reported by the harness</label>
+        <select id="model"></select>
+      </div>
+      <div>
+        <label for="when">Request instant (UTC)</label>
+        <input type="datetime-local" id="when" step="1">
+      </div>
+      <div>
+        <label for="shape">Token shape</label>
+        <select id="shape">
+          <option value="typical">typical</option>
+          <option value="no_cache">no cache</option>
+          <option value="all_cache_hit">all cache hit</option>
+          <option value="inconsistent">hit+miss &gt; prompt</option>
+        </select>
+      </div>
+      <button id="minus1" class="ghost">− 1s</button>
+      <button id="plus1" class="ghost">+ 1s</button>
+    </div>
+
+    <div class="step-rows" id="quickjumps" style="margin-top:14px"></div>
+
+    <div class="verdict" id="verdict"></div>
+
+    <h3>Resolution trace</h3>
+    <div class="step-rows" id="trace"></div>
+
+    <h3>Every card, at this instant</h3>
+    <table id="cards"><thead><tr>
+      <th>match</th><th>in effect</th><th>band now</th><th>rates (miss / hit / out per 1M)</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+
+  <!-- ── walkthroughs ─────────────────────────────────────────────────── -->
+  <h2>Guided walkthroughs</h2>
+  <p class="lede">Each one resets to a known state. Press the steps in order.</p>
+  <div class="panel">
+    <div class="tabs" id="scenTabs"></div>
+    <div id="scenBody"></div>
+  </div>
+
+  <!-- ── validation table ─────────────────────────────────────────────── -->
+  <h2>What the file refuses to load</h2>
+  <p class="lede">
+    The file is hand-edited, so the load-time rules do the guarding. Verdicts below are the real
+    output of <code>ratecard.py</code>.
+  </p>
+  <div class="panel">
+    <div class="tabs" id="ruleTabs"></div>
+    <div id="ruleBody"></div>
+  </div>
+
+  <!-- ── formats ──────────────────────────────────────────────────────── -->
+  <h2>The same card, three formats</h2>
+  <p class="lede">
+    One <code>deepseek-v4-pro</code> card, then the glm-5.3-flash discount split across a date
+    boundary. Rates are CNY per 1M tokens.
+  </p>
+  <div class="panel">
+    <div class="tabs" id="fmtTabs"></div>
+    <pre id="fmtBody"></pre>
+    <ul class="notes" id="fmtNotes"></ul>
+  </div>
+</main>
+
+<script>
+// ─── the liftable half: pure resolution over plain data ────────────────────
+// Mirrors prototypes/rate-card/ratecard.py. No DOM in here.
+
+const ALIASES = {
+  "deepseek/deepseek-v4-flash-vision-exp": "deepseek-v4-flash-vision-exp",
+  "deepseek-v4-pro-202606": "deepseek-v4-pro",
+  "deepseek-v4-pro-0813": "deepseek-v4-pro",
+  "deepseek-v4-flash-0731": "deepseek-v4-flash",
+  "deepseek/deepseek-flash": "deepseek-v4.1-flash",
+};
+
+const PEAK = ["09:00-12:00", "14:00-18:00"];
+const deepseek = (match, off, peak) => ({
+  match, tz: "Asia/Shanghai",
+  default: { miss: off[0], hit: off[1], out: off[2] },
+  bands: [{ within: PEAK, rates: { miss: peak[0], hit: peak[1], out: peak[2] } }],
+});
+
+const CARDS = [
+  { match: "kimi-k3",       rates: { miss: 20.0, hit: 2.0,  out: 100.0 } },
+  { match: "kimi-k2.7-code", rates: { miss: 6.5,  hit: 1.3,  out: 27.0 } },
+  { match: "kimi-k2.6",     rates: { miss: 6.5,  hit: 1.1,  out: 27.0 } },
+  { match: "kimi-k2.5",     rates: { miss: 4.0,  hit: 0.7,  out: 21.0 } },
+  deepseek("deepseek-v4.1-flash", [1.0, 0.02, 4.0],  [2.0, 0.04, 8.0]),
+  deepseek("deepseek-v4-pro",     [4.5, 0.15, 13.5], [9.0, 0.3,  27.0]),
+  deepseek("deepseek-v4-flash",   [1.5, 0.05, 4.5],  [3.0, 0.1,  9.0]),
+  { match: "glm-5.3",       rates: { miss: 8.0,  hit: 2.0,   out: 28.0 } },
+  // the limited-time discount, as a dated pair of cards
+  { match: "glm-5.3-flash", to: "2026-08-01",
+    rates: { miss: 0.8, hit: 0.23, out: 2.8 } },
+  { match: "glm-5.3-flash", from: "2026-08-01",
+    rates: { miss: 0.4, hit: 0.115, out: 1.4 } },
+];
+
+const normalizeModel = (m) =>
+  (m || "").replace(/\[.*?\]/g, "").trim().toLowerCase();
+
+const canonicalModelName = (m) =>
+  !m ? m : (ALIASES[m.trim().toLowerCase()] ?? m);
+
+// Local wall-clock parts of an instant in a named zone.
+function zonedParts(at, tz) {
+  const f = new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = Object.fromEntries(f.formatToParts(at).map((x) => [x.type, x.value]));
+  if (p.hour === "24") p.hour = "00";
+  return {
+    date: `${p.year}-${p.month}-${p.day}`,
+    minutes: Number(p.hour) * 60 + Number(p.minute),
+    clock: `${p.hour}:${p.minute}:${p.second}`,
+  };
+}
+
+const toMinutes = (hhmm) => {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + m;
+};
+
+function bandFor(card, minutes) {
+  if (card.rates) return { rates: card.rates, label: null };  // flat card
+  for (const band of card.bands ?? []) {
+    for (const spec of band.within) {
+      const [s, e] = spec.split("-");
+      if (minutes >= toMinutes(s) && minutes < toMinutes(e))
+        return { rates: band.rates, label: spec };
+    }
+  }
+  return card.default ? { rates: card.default, label: null } : null;
+}
+
+// Longest match first; stable, so file order breaks ties — as the JS does.
+function resolve(model, at) {
+  const steps = [];
+  const raw = model ?? "";
+  const normalized = normalizeModel(raw);
+  steps.push({ label: "normalize", detail: raw === ""
+    ? "empty — nothing to price"
+    : `${JSON.stringify(raw)} → ${JSON.stringify(normalized)}` });
+
+  const canonical = canonicalModelName(raw);
+  steps.push({ label: "alias lookup",
+    detail: canonical === raw
+      ? `no alias for ${JSON.stringify(raw)}; passes through unchanged`
+      : `${JSON.stringify(raw)} → ${JSON.stringify(canonical)} [alias applied]` });
+
+  const scored = CARDS
+    .map((c, i) => ({ c, i, key: normalizeModel(c.match) }))
+    .sort((a, b) => b.key.length - a.key.length || a.i - b.i);
+
+  const candidates = scored.filter(({ c, key }) => {
+    const m = normalizeModel(canonical);
+    return m && (m === key || m.includes(key));
+  });
+  steps.push({ label: "substring candidates",
+    detail: candidates.length
+      ? candidates.map(({ c }) => JSON.stringify(c.match)).join("  then  ")
+      : "none — no card key is contained in this name" });
+
+  for (const { c } of candidates) {
+    const z = zonedParts(at, c.tz ?? "UTC");
+    const inFrom = !c.from || z.date >= c.from;
+    const inTo = !c.to || z.date < c.to;
+    const range = `[${c.from ?? "−∞"}, ${c.to ?? "+∞"})`;
+    if (!(inFrom && inTo)) {
+      steps.push({ label: `date range — ${c.match}`,
+        detail: `${z.date} in ${c.tz ?? "UTC"} is outside ${range} — skip` });
+      continue;
+    }
+    steps.push({ label: `date range — ${c.match}`,
+      detail: `${z.date} in ${c.tz ?? "UTC"} is inside ${range}` });
+    const band = bandFor(c, z.minutes);
+    if (!band) {
+      steps.push({ label: "band", detail: "no band covers this time and no default — skip" });
+      continue;
+    }
+    steps.push({ label: "band",
+      detail: c.rates
+        ? "flat card — one set of rates, all day"
+        : band.label
+          ? `${z.clock} ${c.tz} falls in ${band.label} → the band's rates`
+          : `no window covers ${z.clock}; the card's default rates apply` });
+    steps.push({ label: "match", detail: `${JSON.stringify(c.match)} — first card to survive every step` });
+    return { card: c, rates: band.rates, band: band.label, canonical, normalized, steps, at };
+  }
+
+  steps.push({ label: "match", detail: "no card is in effect → cost is null, and the event is flagged" });
+  return { card: null, rates: null, band: null, canonical, normalized, steps, at };
+}
+
+// Port of computeCostYuan, including the `?? 0` defaults and the rounding.
+function computeCost(resolved, flat) {
+  if (!flat || flat.prompt_tokens == null) return null;
+  if (!resolved.rates) return null;
+  const p = resolved.rates;
+  const hit = flat.prompt_cache_hit_tokens ?? 0;
+  const miss = flat.prompt_cache_miss_tokens ?? 0;
+  const fresh = flat.prompt_tokens - hit - miss;
+  const cost =
+    ((fresh + miss) * p.miss +
+      hit * (p.hit ?? p.miss) +
+      (flat.completion_tokens ?? 0) * p.out) / 1e6;
+  return Math.round(cost * 1e6) / 1e6;
+}
+
+// ─── the page: a thin shell over the module above ──────────────────────────
+
+const SHAPES = {
+  typical: { prompt_tokens: 10000, completion_tokens: 500, total_tokens: 10500,
+             prompt_cache_hit_tokens: 4000, prompt_cache_miss_tokens: 6000 },
+  no_cache: { prompt_tokens: 10000, completion_tokens: 100, total_tokens: 10100,
+              prompt_cache_hit_tokens: 0, prompt_cache_miss_tokens: 10000 },
+  all_cache_hit: { prompt_tokens: 10000, completion_tokens: 100, total_tokens: 10100,
+                   prompt_cache_hit_tokens: 10000, prompt_cache_miss_tokens: 0 },
+  inconsistent: { prompt_tokens: 1000, completion_tokens: 10, total_tokens: 1010,
+                  prompt_cache_hit_tokens: 800, prompt_cache_miss_tokens: 800 },
+};
+
+const MODELS = [
+  "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4.1-flash",
+  "glm-5.3", "glm-5.3-flash", "kimi-k3", "kimi-k2.5",
+  "deepseek/deepseek-flash",
+  "deepseek-v4-flash-vision-exp",
+  "my-kimi-k3-pro",
+  "moonshot-v1",
+];
+
+const state = { model: "deepseek-v4-pro", at: "2026-06-15T01:30:00Z", shape: "typical" };
+const $ = (id) => document.getElementById(id);
+
+const parseAt = (s) => new Date(s.endsWith("Z") || s.includes("+") ? s : s + "Z");
+const toInput = (iso) => iso.replace(/Z$/, "").slice(0, 19);
+
+function setState(patch) { Object.assign(state, patch); syncControls(); render(); }
+
+function syncControls() {
+  $("model").value = state.model;
+  $("shape").value = state.shape;
+  $("when").value = toInput(state.at);
+}
+
+function render() {
+  const at = parseAt(state.at);
+  const flat = SHAPES[state.shape];
+  const r = resolve(state.model, at);
+  const cost = computeCost(r, flat);
+
+  // verdict
+  const v = $("verdict");
+  const bj = zonedParts(at, "Asia/Shanghai");
+  const stamp = `at <span class="mono">${state.at}</span> &middot; ${bj.clock} in Asia/Shanghai`;
+  if (r.rates) {
+    v.className = "verdict good";
+    v.innerHTML = `<div class="big">${cost.toFixed(6)} CNY</div>
+      <div class="sub">priced by ${JSON.stringify(r.card.match)}${r.band ? ` in band ${r.band}` : " (no band)"}
+      — miss ${r.rates.miss} / hit ${r.rates.hit} / out ${r.rates.out} per 1M, ${stamp}</div>`;
+  } else {
+    v.className = "verdict none";
+    v.innerHTML = `<div class="big">cost is null</div>
+      <div class="sub">no card is in effect for ${JSON.stringify(state.model)} ${stamp}
+      — the event is stored unpriced and flagged once</div>`;
+  }
+
+  // trace
+  $("trace").innerHTML = r.steps.map((s) => `
+    <div class="step-row ${s.label === "match" ? "done" : ""}">
+      <span class="tag ${s.label === "match" ? "ok" : "warn"}"
+            style="${s.label === "match" ? "" : "background:#f4f5f7;color:#6b7280"}">${s.label}</span>
+      <span class="mono">${escapeHtml(s.detail)}</span>
+    </div>`).join("");
+
+  // every card
+  const rows = CARDS.map((c) => {
+    const z = zonedParts(at, c.tz ?? "UTC");
+    const inEffect = (!c.from || z.date >= c.from) && (!c.to || z.date < c.to);
+    const band = inEffect ? bandFor(c, z.minutes) : null;
+    const rates = band?.rates;
+    const isWinner = r.card === c;
+    return `<tr class="${isWinner ? "hit" : inEffect ? "" : "dim"}">
+      <td class="mono">${c.match}</td>
+      <td>${inEffect ? "yes" : "no"}</td>
+      <td class="mono">${!inEffect ? "—" : band?.label ?? (c.rates ? "flat" : "default")}</td>
+      <td class="mono">${rates ? `${rates.miss} / ${rates.hit} / ${rates.out}` : "—"}</td>
+    </tr>`;
+  }).join("");
+  $("cards").querySelector("tbody").innerHTML = rows;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+// quick jumps — the boundaries worth feeling
+const JUMPS = [
+  { label: "08:59:59 BJ", at: "2026-06-15T00:59:59Z" },
+  { label: "09:00:00 BJ (peak opens)", at: "2026-06-15T01:00:00Z" },
+  { label: "11:59:59 BJ", at: "2026-06-15T03:59:59Z" },
+  { label: "12:00:00 BJ (peak closes)", at: "2026-06-15T04:00:00Z" },
+  { label: "14:00:00 BJ (peak reopens)", at: "2026-06-15T06:00:00Z" },
+  { label: "18:00:00 BJ (peak closes)", at: "2026-06-15T10:00:00Z" },
+];
+$("quickjumps").innerHTML = JUMPS.map((j, i) =>
+  `<div class="step-row"><button data-jump="${i}">${j.label}</button>
+   <span class="mono hint">${j.at}</span></div>`).join("");
+$("quickjumps").addEventListener("click", (e) => {
+  const i = e.target.dataset?.jump;
+  if (i != null) setState({ at: JUMPS[i].at });
+});
+
+// ─── walkthroughs ──────────────────────────────────────────────────────────
+
+const SCENARIOS = [
+  {
+    title: "The substring trap",
+    blurb: "glm-5.3 is a prefix of glm-5.3-flash. If matching went the other way, " +
+           "or sorted wrongly, the cheap model would silently price at the expensive one's rates.",
+    steps: [
+      { run: () => setState({ model: "glm-5.3", at: "2026-06-15T01:30:00Z", shape: "typical" }),
+        note: "glm-5.3 alone should land on the glm-5.3 card." },
+      { run: () => setState({ model: "glm-5.3-flash" }),
+        note: "Now glm-5.3-flash — it must land on its own card, not glm-5.3. " +
+              "Rates should change from 8/2/28 to 0.8/0.23/2.8." },
+      { run: () => setState({ model: "glm-5.3-flash[1m]" }),
+        note: "Claude Code tags 1M-context runs with a [1m] suffix. The suffix is stripped " +
+              "before matching, so this is the same card." },
+    ],
+  },
+  {
+    title: "The discount switch",
+    blurb: "The limited-time 50% discount has to be a dated pair of cards. " +
+           "Step across the boundary and watch list rates become discount rates — with no code change.",
+    steps: [
+      { run: () => setState({ model: "glm-5.3-flash", at: "2026-07-31T12:00:00Z", shape: "typical" }),
+        note: "31 July: list price, 0.8 / 0.23 / 2.8." },
+      { run: () => setState({ at: "2026-08-01T00:00:00Z" }),
+        note: "Midnight UTC on 1 August. The discount card starts here — its `from` is " +
+              "inclusive, its predecessor's `to` is exclusive, so they meet with no overlap " +
+              "and no gap." },
+      { run: () => setState({ at: "2026-09-18T12:00:00Z" }),
+        note: "Today. Still discounted, because the discount card is open-ended. " +
+              "When the promo ends, someone adds a card from that day with the list rates back." },
+    ],
+  },
+  {
+    title: "Peak and off-peak",
+    blurb: "DeepSeek's banding, in Beijing time. The windows are half-open, which is the " +
+           "detail that decides 12:00:00 sharp and 18:00:00 sharp.",
+    steps: [
+      { run: () => setState({ model: "deepseek-v4-pro", at: "2026-06-15T00:59:59Z", shape: "typical" }),
+        note: "08:59:59 Beijing — one second before peak. Off-peak rates: 4.5 / 0.15 / 13.5." },
+      { run: () => setState({ at: "2026-06-15T01:00:00Z" }),
+        note: "09:00:00 sharp is peak. The window opens inclusively: 9 / 0.3 / 27." },
+      { run: () => setState({ at: "2026-06-15T04:00:00Z" }),
+        note: "12:00:00 sharp is already off-peak — the window's end is exclusive. " +
+              "Both edges are half-open, so a window and the next can touch without overlapping." },
+      { run: () => setState({ at: "2026-06-15T06:00:00Z" }),
+        note: "14:00:00 reopens peak." },
+      { run: () => setState({ at: "2026-06-15T16:00:00Z" }),
+        note: "Midnight in Beijing. Covered by no window, so the card's `default` applies." },
+    ],
+  },
+  {
+    title: "Nobody priced this",
+    blurb: "A model the file has never heard of. The old map priced kimi and moonshot " +
+           "generically; the pending edit drops those catch-alls.",
+    steps: [
+      { run: () => setState({ model: "my-kimi-k3-pro", at: "2026-06-15T01:30:00Z" }),
+        note: "Not a card name — but \"kimi-k3\" is a substring of it, so it prices anyway. " +
+              "Substring matching means a card doubles as a family catch-all." },
+      { run: () => setState({ model: "moonshot-v1" }),
+        note: "Nothing matches. Cost is null and the event is flagged. " +
+              "Is that right, or do we want a catch-all card back?" },
+      { run: () => setState({ model: "deepseek/deepseek-flash" }),
+        note: "A relay-station id. The alias table folds it onto deepseek-v4.1-flash, " +
+              "but note the trace: pricing never sees the alias — the ingest path applies it first." },
+    ],
+  },
+  {
+    title: "When the tokens don't add up",
+    blurb: "computeCostYuan trusts its input completely. This is the one place the port " +
+           "faithfully copies a bug rather than fixing it.",
+    steps: [
+      { run: () => setState({ model: "deepseek-v4-pro", at: "2026-06-15T01:30:00Z", shape: "typical" }),
+        note: "A consistent event: hit + miss equals prompt." },
+      { run: () => setState({ shape: "inconsistent" }),
+        note: "Here hit + miss (1600) exceeds prompt (1000), so \"fresh\" goes negative " +
+              "and is billed at the miss rate. The result is a plausible-looking number, " +
+              "not an error. The port matches the JS exactly; guarding belongs upstream, " +
+              "where the token columns are written." },
+    ],
+  },
+];
+
+let scen = 0;
+$("scenTabs").innerHTML = SCENARIOS.map((s, i) =>
+  `<button data-s="${i}">${s.title}</button>`).join("");
+
+function renderScenario() {
+  const s = SCENARIOS[scen];
+  $("scenTabs").querySelectorAll("button").forEach((b, i) =>
+    b.classList.toggle("on", i === scen));
+  $("scenBody").innerHTML = `
+    <p class="lede" style="margin-top:16px">${s.blurb}</p>
+    <div class="step-rows">${s.steps.map((st, i) => `
+      <div class="step-row"><button data-step="${i}" class="${i === 0 ? "primary" : ""}">
+        step ${i + 1}</button>
+        <span class="hint">${escapeHtml(st.note)}</span></div>`).join("")}
+    </div>`;
+}
+$("scenTabs").addEventListener("click", (e) => {
+  const i = e.target.dataset?.s;
+  if (i != null) { scen = Number(i); renderScenario(); }
+});
+$("scenBody").addEventListener("click", (e) => {
+  const i = e.target.dataset?.step;
+  if (i != null) SCENARIOS[scen].steps[Number(i)].run();
+});
+
+// ─── validation rules ──────────────────────────────────────────────────────
+
+const RULES = [
+  { title: "overlapping ranges", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\nfrom = 2026-01-01\nto = 2026-06-01\nrates = { miss=1, hit=1, out=1 }\n\n[[card]]\nmatch = "glm-5.3"\nfrom = 2026-05-01\nrates = { miss=2, hit=2, out=2 }`,
+    why: "Two cards claim the same instant, so pricing is ambiguous. The loader picks neither — it refuses the file, naming both cards.",
+    msg: "(match='glm-5.3'): date ranges overlap — card #1 runs to 2026-06-01, card #2 starts 2026-05-01. Pricing would be ambiguous." },
+  { title: "a gap between ranges", verdict: "warning",
+    body: `[[card]]\nmatch = "glm-5.3"\nto = 2026-06-01\nrates = { miss=1, hit=1, out=1 }\n\n[[card]]\nmatch = "glm-5.3"\nfrom = 2026-07-01\nrates = { miss=2, hit=2, out=2 }`,
+    why: "June is unpriced. Usually a typo, so it warns at load rather than failing — history before the first card is legitimately unpriced, and the loader cannot tell the two apart.",
+    msg: "(match='glm-5.3'): nothing is in effect from 2026-06-01 to 2026-07-01; events in that gap price null" },
+  { title: "adjacent ranges", verdict: "accepted",
+    body: `[[card]]\nmatch = "glm-5.3"\nto = 2026-06-01\nrates = { miss=1, hit=1, out=1 }\n\n[[card]]\nmatch = "glm-5.3"\nfrom = 2026-06-01\nrates = { miss=2, hit=2, out=2 }`,
+    why: "Ranges are half-open, so `to` and the next `from` can be the same day. This is how a price change is written: one day, two cards, no overlap and no gap." },
+  { title: "a typo'd rate key", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\nrates = { miss=1, hitt=1, out=1 }`,
+    why: "Unknown keys are errors, not ignored. Without this, a misspelled `hit` would silently vanish and cache hits would bill at the miss rate.",
+    msg: "card #1 (match='glm-5.3'): unknown rate key(s) ['hitt']; expected miss/hit/out" },
+  { title: "rates missing `miss`", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\nrates = { hit=1, out=1 }`,
+    why: "`miss` and `out` are required. `hit` is optional and falls back to `miss` — the `p.hit ?? p.miss` behaviour the JS already has.", msg: "card #1 (match='glm-5.3'): rates must set `miss`" },
+  { title: "banded card with no tz", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\ndefault = { miss=1, hit=1, out=1 }\n\n[[card.band]]\nwithin = ["09:00-12:00"]\nrates = { miss=2, hit=2, out=2 }`,
+    why: "“09:00” means nothing without a zone. A banded card must name one; it governs both the windows and the date-range boundaries.",
+    msg: "card #1 (match='glm-5.3'): banded cards must name a `tz`; band times are meaningless without one" },
+  { title: "banded card with no default", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\ntz = "Asia/Shanghai"\n\n[[card.band]]\nwithin = ["09:00-12:00"]\nrates = { miss=2, hit=2, out=2 }`,
+    why: "With no default, the other 21 hours of the day price null. Requiring it turns an omission into a load error instead of a silent hole.",
+    msg: "card #1 (match='glm-5.3'): banded cards must set `default`, otherwise times outside every window are unpriced" },
+  { title: "overlapping bands", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\ntz = "Asia/Shanghai"\ndefault = { miss=1, hit=1, out=1 }\n\n[[card.band]]\nwithin = ["09:00-13:00"]\nrates = { miss=2, hit=2, out=2 }\n\n[[card.band]]\nwithin = ["12:00-15:00"]\nrates = { miss=3, hit=3, out=3 }`,
+    why: "Same ambiguity as overlapping date ranges, one level down.",
+    msg: "card #1 (match='glm-5.3'): bands 09:00-13:00 and 12:00-15:00 overlap" },
+  { title: "a midnight-spanning window", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\ntz = "Asia/Shanghai"\ndefault = { miss=1, hit=1, out=1 }\n\n[[card.band]]\nwithin = ["22:00-02:00"]\nrates = { miss=2, hit=2, out=2 }`,
+    why: "A window that wraps midnight cannot be written here; split it into 22:00-24:00 and 00:00-02:00. Rejecting it keeps every window a simple half-open interval.",
+    msg: "card #1 (match='glm-5.3') band #1: window '22:00-02:00' must start before it ends; split a midnight-spanning window into two" },
+  { title: "a currency other than CNY", verdict: "rejected",
+    body: `schema = 1\ncurrency = "USD"\n\n[[card]]\nmatch = "glm-5.3"\nrates = { miss=1, hit=1, out=1 }`,
+    why: "The stored column is cost_yuan. Anything else would need an FX-rate source this design deliberately does not have.",
+    msg: "currency must be 'CNY', got 'USD'; other currencies would need an FX rate source, which this file deliberately does not have" },
+  { title: "an unknown timezone", verdict: "rejected",
+    body: `[[card]]\nmatch = "glm-5.3"\ntz = "Mars/Olympus"\ndefault = { miss=1, hit=1, out=1 }\n\n[[card.band]]\nwithin = ["09:00-12:00"]\nrates = { miss=2, hit=2, out=2 }`,
+    why: "Resolved through the system tz database at load, so typos surface immediately rather than at the first event.",
+    msg: "card #1 (match='glm-5.3'): unknown timezone 'Mars/Olympus': 'No time zone found with key Mars/Olympus'" },
+];
+
+let rule = 0;
+$("ruleTabs").innerHTML = RULES.map((r, i) =>
+  `<button data-r="${i}">${r.title}</button>`).join("");
+
+function renderRule() {
+  const r = RULES[rule];
+  $("ruleTabs").querySelectorAll("button").forEach((b, i) =>
+    b.classList.toggle("on", i === rule));
+  const cls = r.verdict === "rejected" ? "no" : r.verdict === "warning" ? "warn" : "ok";
+  $("ruleBody").innerHTML = `
+    <div class="cols" style="margin-top:16px">
+      <div><h3 style="margin-top:0">the file says</h3><pre>${escapeHtml(r.body)}</pre></div>
+      <div><h3 style="margin-top:0">the loader says</h3>
+        <p><span class="tag ${cls}">${r.verdict}</span></p>
+        ${r.msg ? `<pre>${escapeHtml(r.msg)}</pre>` : `<p class="hint">loaded cleanly, no warnings</p>`}
+        <p class="hint" style="margin-top:10px">${r.why}</p>
+      </div>
+    </div>`;
+}
+$("ruleTabs").addEventListener("click", (e) => {
+  const i = e.target.dataset?.r;
+  if (i != null) { rule = Number(i); renderRule(); }
+});
+
+// ─── format comparison ─────────────────────────────────────────────────────
+
+const FORMATS = {
+  TOML: {
+    body: `schema   = 1
+currency = "CNY"
+
+[[card]]
+match   = "deepseek-v4-pro"
+tz      = "Asia/Shanghai"
+default = { miss = 4.5, hit = 0.15, out = 13.5 }   # off-peak
+
+  [[card.band]]
+  within = ["09:00-12:00", "14:00-18:00"]
+  rates  = { miss = 9.0, hit = 0.3, out = 27.0 }    # peak
+
+# list, then a limited-time 50% discount
+[[card]]
+match = "glm-5.3-flash"
+to    = 2026-08-01
+rates = { miss = 0.8, hit = 0.23, out = 2.8 }
+
+[[card]]
+match = "glm-5.3-flash"
+from  = 2026-08-01
+rates = { miss = 0.4, hit = 0.115, out = 1.4 }`,
+    notes: [
+      "Dates are a real type: 2026-08-01 parses to a date, not a string. Nothing has to guess a format.",
+      "Comments live in the file, so provenance (“Zhipu BigModel, open.bigmodel.cn/pricing”) and the EDIT-me reminder survive.",
+      "Read with tomllib — Python 3.11+, no dependency. The design's only real cost is that band blocks are a little nested.",
+    ],
+  },
+  JSON: {
+    body: `{
+  "schema": 1,
+  "currency": "CNY",
+  "cards": [
+    {
+      "match": "deepseek-v4-pro",
+      "tz": "Asia/Shanghai",
+      "default": { "miss": 4.5, "hit": 0.15, "out": 13.5 },
+      "bands": [
+        { "within": ["09:00-12:00", "14:00-18:00"],
+          "rates": { "miss": 9.0, "hit": 0.3, "out": 27.0 } }
+      ]
+    },
+    { "match": "glm-5.3-flash", "to": "2026-08-01",
+      "rates": { "miss": 0.8, "hit": 0.23, "out": 2.8 } },
+    { "match": "glm-5.3-flash", "from": "2026-08-01",
+      "rates": { "miss": 0.4, "hit": 0.115, "out": 1.4 } }
+  ]
+}`,
+    notes: [
+      "No comments. The “EDIT these rates” line and every provenance URL have to go somewhere else.",
+      "Dates are strings, so the loader must parse and validate them itself.",
+      "Every brace and trailing comma is a way to break a file someone edits by hand.",
+      "Its one advantage: the website could read the same file with no parser change. Nothing currently needs that.",
+    ],
+  },
+  YAML: {
+    body: `schema: 1
+currency: CNY
+
+cards:
+  - match: deepseek-v4-pro
+    tz: Asia/Shanghai
+    default: { miss: 4.5, hit: 0.15, out: 13.5 }
+    bands:
+      - within: ["09:00-12:00", "14:00-18:00"]
+        rates: { miss: 9.0, hit: 0.3, out: 27.0 }
+
+  - match: glm-5.3-flash
+    to: 2026-08-01
+    rates: { miss: 0.8, hit: 0.23, out: 2.8 }
+
+  - match: glm-5.3-flash
+    from: 2026-08-01
+    rates: { miss: 0.4, hit: 0.115, out: 1.4 }`,
+    notes: [
+      "Comments still allowed — so it beats JSON on the hand-editing test.",
+      "Dates are version-dependent: YAML 1.1 parses 2026-08-01 as a date, YAML 1.2 as a string. Which one you get depends on the library.",
+      "Needs PyYAML, a third-party dependency, for a file read once at startup.",
+      "Whitespace is significant; a mis-indented band block can silently change meaning instead of failing.",
+    ],
+  },
+};
+
+let fmt = "TOML";
+$("fmtTabs").innerHTML = Object.keys(FORMATS).map((k) =>
+  `<button data-f="${k}">${k}</button>`).join("");
+
+function renderFmt() {
+  $("fmtTabs").querySelectorAll("button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.f === fmt));
+  $("fmtBody").textContent = FORMATS[fmt].body;
+  $("fmtNotes").innerHTML = FORMATS[fmt].notes.map((n) => `<li>${n}</li>`).join("");
+}
+$("fmtTabs").addEventListener("click", (e) => {
+  if (e.target.dataset?.f) { fmt = e.target.dataset.f; renderFmt(); }
+});
+
+// ─── wiring ────────────────────────────────────────────────────────────────
+
+$("model").innerHTML = MODELS.map((m) => `<option>${m}</option>`).join("");
+$("model").addEventListener("change", (e) => setState({ model: e.target.value }));
+$("shape").addEventListener("change", (e) => setState({ shape: e.target.value }));
+$("when").addEventListener("change", (e) => {
+  if (e.target.value) setState({ at: e.target.value + "Z" });
+});
+$("minus1").addEventListener("click", () =>
+  setState({ at: new Date(parseAt(state.at).getTime() - 1000).toISOString() }));
+$("plus1").addEventListener("click", () =>
+  setState({ at: new Date(parseAt(state.at).getTime() + 1000).toISOString() }));
+
+syncControls();
+render();
+renderScenario();
+renderRule();
+renderFmt();
+</script>
+</body>
+</html>

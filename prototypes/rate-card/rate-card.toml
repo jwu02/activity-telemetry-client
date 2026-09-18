@@ -1,0 +1,95 @@
+# PROTOTYPE — sample rate card to react to. Not wired into anything.
+#
+# Rates are CNY per 1,000,000 tokens. Hand-edited; keep the comments.
+#
+# A card is in effect for an instant when:
+#   1. the instant's LOCAL DATE (in the card's tz) falls in [from, to)   — dates are
+#      half-open, so write `to = 2026-09-01` for a card that ends 31 Aug
+#      (omit `from` for "since forever", omit `to` for "until further notice")
+#   2. if the card has bands, the instant's LOCAL TIME falls in one of them;
+#      time covered by no band uses the card's `default` rates
+#
+# Date ranges for the same `match` must not overlap. Bands within a card must
+# not overlap. A `match` is a substring of the model name (longest match wins),
+# exactly as today.
+
+schema   = 1
+currency = "CNY"   # only CNY is supported; the stored column is cost_yuan
+
+# ── Model aliases ──────────────────────────────────────────────────────────
+# Token relay stations report models under their own ids. Exact match on the
+# lowercased incoming id; unknown names pass through unchanged.
+[aliases]
+"deepseek/deepseek-v4-flash-vision-exp" = "deepseek-v4-flash-vision-exp"
+"deepseek-v4-pro-202606"                = "deepseek-v4-pro"
+"deepseek-v4-pro-0813"                  = "deepseek-v4-pro"
+"deepseek-v4-flash-0731"                = "deepseek-v4-flash"
+"deepseek/deepseek-flash"               = "deepseek-v4.1-flash"
+
+# ── Moonshot / Kimi (flat) ─────────────────────────────────────────────────
+
+[[card]]
+match = "kimi-k3"
+rates = { miss = 20.0, hit = 2.0, out = 100.0 }
+
+[[card]]
+match = "kimi-k2.7-code"
+rates = { miss = 6.5, hit = 1.3, out = 27.0 }
+
+[[card]]
+match = "kimi-k2.6"
+rates = { miss = 6.5, hit = 1.1, out = 27.0 }
+
+[[card]]
+match = "kimi-k2.5"
+rates = { miss = 4.0, hit = 0.7, out = 21.0 }
+
+# ── DeepSeek V4 (peak / off-peak by Beijing time, off-peak is half price) ──
+# Peak 09:00–12:00 and 14:00–18:00 Asia/Shanghai; everything else is off-peak.
+# Windows are half-open [start, end), so 12:00 sharp is already off-peak.
+
+[[card]]
+match   = "deepseek-v4.1-flash"
+tz      = "Asia/Shanghai"
+default = { miss = 1.0, hit = 0.02, out = 4.0 }        # off-peak
+
+  [[card.band]]
+  within = ["09:00-12:00", "14:00-18:00"]
+  rates  = { miss = 2.0, hit = 0.04, out = 8.0 }       # peak
+
+[[card]]
+match   = "deepseek-v4-pro"
+tz      = "Asia/Shanghai"
+default = { miss = 4.5, hit = 0.15, out = 13.5 }       # off-peak
+
+  [[card.band]]
+  within = ["09:00-12:00", "14:00-18:00"]
+  rates  = { miss = 9.0, hit = 0.3, out = 27.0 }       # peak
+
+[[card]]
+match   = "deepseek-v4-flash"
+tz      = "Asia/Shanghai"
+default = { miss = 1.5, hit = 0.05, out = 4.5 }        # off-peak
+
+  [[card.band]]
+  within = ["09:00-12:00", "14:00-18:00"]
+  rates  = { miss = 3.0, hit = 0.1, out = 9.0 }        # peak
+
+# ── Zhipu BigModel (flat, no peak/off-peak) ────────────────────────────────
+
+[[card]]
+match = "glm-5.3"
+rates = { miss = 8.0, hit = 2.0, out = 28.0 }
+
+# glm-5.3-flash: list price, then a limited-time 50% discount. The discount is
+# an open-ended card — when it ends, add a card dated from that day carrying
+# the list rates back. Until someone edits this file, the discount stands.
+[[card]]
+match = "glm-5.3-flash"
+to    = 2026-08-01                 # TODO(confirm): discount start date
+rates = { miss = 0.8, hit = 0.23, out = 2.8 }          # list
+
+[[card]]
+match = "glm-5.3-flash"
+from  = 2026-08-01                 # TODO(confirm): discount start date
+rates = { miss = 0.4, hit = 0.115, out = 1.4 }         # 50% off, limited time
