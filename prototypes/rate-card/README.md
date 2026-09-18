@@ -105,13 +105,20 @@ Things that are true today and worth a decision, independent of format:
    copies this deliberately rather than diverging. A guard belongs where the
    token columns are written.
 
-## Open questions
+## Decisions confirmed on review
 
-- **The discount start date.** `2026-08-01` in `rate-card.toml` is a
-  placeholder, and the discount card is open-ended. When the promo actually
-  ends, someone adds a card from that day carrying the list rates back.
-- **Catch-alls** (finding 1) — do we want `kimi` / `moonshot` style entries in
-  the new file?
+- **Format: TOML.** As above.
+- **Gaps: warn at load, null at ingest.** Overlaps remain a hard error.
+- **Catch-alls stay deleted.** Findings 1 and 2 are accepted, not fixed: an
+  unpriced model appearing in the run summary beats a plausible wrong number.
+  `moonshot-v1` and a bare `deepseek-v4` price null from here on.
+- **The discount start date stays a placeholder.** `2026-08-01` in
+  `rate-card.toml` is marked `TODO(confirm)`; the real date gets filled in when
+  the file lands in the real codebase. The discount card is open-ended, so when
+  the promo ends someone adds a card from that day carrying the list rates back.
+
+## Left open
+
 - **Where the file lives.** The sample sits at the prototype path; the real
   location depends on the packaging decision, and hand-editing a file inside
   `site-packages` is a bad default.
