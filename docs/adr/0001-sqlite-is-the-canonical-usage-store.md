@@ -1,0 +1,3 @@
+# SQLite is the canonical usage store; MongoDB Atlas is an export target
+
+AI-usage events are written first to a local SQLite database that owns correctness (unique-index dedup, offline operation), then replicated to MongoDB Atlas by an export command. The website (`jwoo`) reads only Mongo, so export must reproduce the existing `ai_usage` document contract exactly — the site's aggregations null-coalesce to zero on drift, making parity a test, not a hope. This replaces direct-to-Mongo writes whose find-then-insert dedup (content fingerprint + ±5s window) is racy. Telemetry (mouse/keyboard) documents keep their existing direct-to-Mongo path and are out of scope for export.
