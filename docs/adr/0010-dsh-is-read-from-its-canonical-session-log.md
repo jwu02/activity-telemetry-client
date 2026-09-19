@@ -66,6 +66,13 @@ that.
 
 ## `sync` and `watch` are wired; there is no hook
 
+> **Amended by [ADR-0013](./0013-there-is-no-watch-command-and-no-standing-process.md):** there is
+> no `watch` command; DSH is sync-only, and the section below is the reason it has no hook rather
+> than a reason to keep a tail. **The cursor section is superseded** — with every pass reading
+> from offset 0, the header is re-derived on each read rather than stored, and no `{offset, header}`
+> map exists. The decoder rules (checksummed frames, `unused_data` boundaries, the discarded
+> magic-scan) are unaffected.
+
 DSH has no shell-hook mechanism comparable to Claude Code's `settings.json`. It has a Cordis
 plugin system (`dsh plugin --profile <name>`, profiles of pnpm-installed bundles plus a
 `cordis.patch.yml`), and a `sessionTelemetry` service whose `SessionTelemetrySink` backend

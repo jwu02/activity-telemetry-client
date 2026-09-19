@@ -31,6 +31,12 @@ is JSON-identical to the row's `data` in all 229 cases that have both.
 
 ## `watch` is wired for OpenCode — the triad is not uniform
 
+> **Amended by [ADR-0013](./0013-there-is-no-watch-command-and-no-standing-process.md):** there is
+> no `watch` command. Everything below about the `event` table, its `seq`, and `event_sequence`
+> stands as written and is why the tail was *possible*; it is no longer a source anything reads.
+> The `message`-table sync path described here is unchanged and is now the only OpenCode path
+> besides the hook.
+
 The map's charting notes recorded "the hook/watch/sync triad is fixed for all three harnesses."
 That is now false in both directions: Claude Code wires hook + sync and deliberately not watch,
 and OpenCode wires all three. The sources differ, so the drivers differ; uniformity was an

@@ -54,11 +54,13 @@ The fast path: a hook hands the CLI its harness's own raw payload, and the CLI p
 _Avoid_: import (reserved for migration).
 
 **Sync**:
-Reconciliation: re-read a source's full history and store what's missing; idempotent by event identity.
+Reconciliation: re-read a source's full history and store what's missing; idempotent by event identity. The standing path — run on a timer, it is what keeps a source current.
 _Avoid_: backfill (the old scripts' name).
 
 **Watch**:
-The standing path: tail sources in the background and ingest as new data appears.
+_Historical._ The abandoned standing path: tail sources in the background and ingest as new data
+appears. The tool runs no resident process, so catch-up is *Sync* on a timer.
+_Avoid_: unless describing the design as it was before [ADR-0013](./docs/adr/0013-there-is-no-watch-command-and-no-standing-process.md), which is the only place this word still applies.
 
 **Event identity**:
 What makes two events the same event for dedup purposes: the harness-scoped id of the API request when the source carries one, else the event's content fingerprint within a coarse time bucket. One value on every event; ingest, watch, and sync all dedup through it.
@@ -81,5 +83,21 @@ The cost recorded on an event at ingest, priced by the rate card in effect at th
 The local SQLite database — the source of truth for events.
 _Avoid_: database (ambiguous with the website's Mongo).
 
+**Outbox**:
+The events already committed to the canonical store but not yet replicated to MongoDB; `export` drains it.
+_Avoid_: queue, backlog, pending.
+
 **Export**:
 Replication from the canonical store into MongoDB Atlas, preserving the website's document contracts.
+
+**Drain**:
+One pass of export: the outbox's pending events upserted into MongoDB.
+_Avoid_: flush (the daemon's word for its own write to Mongo), sync, push.
+
+**Replica**:
+MongoDB's standing relative to the canonical store: every event is copied there, and it is never the source of truth.
+_Avoid_: mirror, backup.
+
+**Parity**:
+An exported document's agreement with the website's contract — field names, types, and nullability alike.
+_Avoid_: fidelity, compatibility. Drift is the failure of parity, not a synonym for it.

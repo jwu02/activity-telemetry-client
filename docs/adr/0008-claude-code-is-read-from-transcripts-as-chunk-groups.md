@@ -28,6 +28,14 @@ documented undercount class returning by a new route. Grouping is
 *slicing*, not parsing, so it belongs to the per-driver enumerate path; the parser stays a pure
 function over the group.
 
+> **Partially amended by [ADR-0013](./0013-there-is-no-watch-command-and-no-standing-process.md):**
+> this ADR was written with `hook + sync` wired and `watch` deliberately not, which ADR-0013
+> confirms — there is no `watch` command, and Claude is hook + sync. Two things below change. The
+> "holds the cursor short of it" mechanism is replaced by re-deriving the deferral on every pass,
+> since sync no longer keeps a cursor; and OpenTelemetry's "recorded as a candidate on the
+> supervisor question" resolves to *not now* — with no standing process, an OTLP receiver has no
+> host. Everything about chunk groups, the finish-marker rule, and identity is untouched.
+
 **Completeness needs no clock, because streaming only ever appends to the end of a file.** A group
 is complete iff it is not the file's trailing group, or it contains a non-null `stop_reason`. So a
 read that lands mid-response defers the trailing group and holds the cursor short of it, rather
