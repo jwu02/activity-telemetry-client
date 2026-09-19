@@ -17,8 +17,12 @@ Mouse/keyboard/app activity counts flushed per interval by the daemon — a sepa
 The Next.js consumer (`jwoo`) reading Mongo aggregations; the only reader of exported data.
 
 **Interactive session**:
-The REPL that bare `jwoo` opens on a terminal: a front-end over the same commands as the non-interactive subcommands, not a separate surface.
-_Avoid_: session (unqualified — see *Harness session*), shell, TUI (it is not a full-screen interface).
+The REPL that bare `jwoo` opens on a terminal: a front-end over the same commands as the non-interactive subcommands, not a separate surface. It observes the *Daemon* but never starts or stops it.
+_Avoid_: session (unqualified — see *Harness session*), shell, TUI (it is not a full-screen interface). See [ADR-0014](./docs/adr/0014-the-interactive-session-is-a-narrow-repl.md).
+
+**Daemon state**:
+The runtime record the *Daemon* publishes about itself — pid, start time, last flush, flush count, last error — so a *Telemetry* daemon that has crashed is distinguishable from one that was never started. A liveness and health record only; it is not an *Event* and never enters the *Canonical store*.
+_Avoid_: heartbeat, health, status (the `status` command reads this and much besides).
 
 ### Usage ingestion
 
@@ -49,6 +53,13 @@ _Avoid_: session (unqualified — see *Interactive session*), conversation.
 A harness's data origin that a parser reads (hook payload, transcript, session log, database).
 _Avoid_: feed, stream.
 
+**Driver**:
+The per-harness reader that turns a *Source* into the raw records the parser consumes — enumerating
+them, and assembling whatever the *Source* does not hand over directly. It is the seam a *Fixture*
+tests, because most traps are properties of a source rather than of a record.
+_Avoid_: reader, loader, adapter (that word is taken by export's row→document function). See
+[ADR-0016](./docs/adr/0016-parser-fixtures-are-captured-from-real-data-and-scalar-reduced.md).
+
 **Ingest**:
 The fast path: a hook hands the CLI its harness's own raw payload, and the CLI parses, prices, and stores it.
 _Avoid_: import (reserved for migration).
@@ -64,6 +75,18 @@ _Avoid_: unless describing the design as it was before [ADR-0013](./docs/adr/001
 
 **Event identity**:
 What makes two events the same event for dedup purposes: the harness-scoped id of the API request when the source carries one, else the event's content fingerprint within a coarse time bucket. One value on every event; ingest, watch, and sync all dedup through it.
+
+**Reduction**:
+Turning a *Source*'s real data into a *Fixture* by replacing every string value with a deterministic placeholder derived from it, while every number, boolean, and null — and the structure itself — is preserved exactly.
+_Avoid_: redaction, scrubbing, anonymisation (each names what it removes; *Reduction* also names what it keeps, which is the point). See [ADR-0016](./docs/adr/0016-parser-fixtures-are-captured-from-real-data-and-scalar-reduced.md).
+
+**Fixture**:
+A miniature *Source* and the events it must yield, captured from real data and reduced — the unit that proves a parser and the driver that feeds it still agree. A fixture is not a simulator: it is one recorded case, and the events it expects are part of it.
+_Avoid_: mock, stub, sample, golden file.
+
+**Scenario**:
+One named *Fixture* — a single recorded case, identified by the trap or behaviour it pins (`interleaved-lines`, `duplicate-usage`).
+_Avoid_: test case, example.
 
 ### Pricing
 
@@ -101,3 +124,11 @@ _Avoid_: mirror, backup.
 **Parity**:
 An exported document's agreement with the website's contract — field names, types, and nullability alike.
 _Avoid_: fidelity, compatibility. Drift is the failure of parity, not a synonym for it.
+
+**Legacy tail**:
+The slice of the website's existing `ai_usage` documents that no *Source* reaches any more — for
+Claude, everything before the transcripts' 30-day horizon. Imported once as ordinary *Events* so
+the *Canonical store* stays complete; distinguished by its turn-end timestamps and its
+`migration:legacy` provenance, not by a separate table.
+_Avoid_: backfill (the old scripts' name), history, old data. See
+[ADR-0017](./docs/adr/0017-history-is-re-derived-from-sources-with-a-legacy-tail-imported.md).

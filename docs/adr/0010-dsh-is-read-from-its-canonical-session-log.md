@@ -1,7 +1,13 @@
 # DSH's source is its canonical session log — the `assistant/message` event
 
-`jwoo` reads DSH usage from `$DSH_HOME/sessions/<project-key>/<session-id>/session.jsonl.zstd`
-(root overridable). The log is DSH's canonical, append-only record: one JSON event per line, one
+`jwoo` reads DSH usage from `~/.dsh/sessions/<project-key>/<session-id>/session.jsonl.zstd`
+(root overridable). **Corrected:** this ADR originally said `$DSH_HOME/sessions`; `DSH_HOME` is
+unset on this machine and neither `~/.local/share/dsh` nor `~/.config/dsh` exists, so the default
+root is the `~/.dsh` fallback. Note also that a **project-key directory name encodes the source's
+absolute path** (`--Users-<name>-Developer-...--`), so the path to a log is itself identifying —
+which is why DSH fixtures are reduced rather than captured verbatim
+([ADR-0016](./0016-parser-fixtures-are-captured-from-real-data-and-scalar-reduced.md)).
+The log is DSH's canonical, append-only record: one JSON event per line, one
 `assistant/message` event per committed LLM API request. Probe-verified on the 9 local session
 logs holding 321 `assistant/message` events: **every one carries a usage object** (0 without),
 every one carries `data.message.id`, and the `session` header appears exactly once per file. No
@@ -55,14 +61,31 @@ total_tokens              = prompt_tokens + completion_tokens
 
 `reasoningTokens` is a **subset** of `outputTokens` (the same relationship ADR-0009 had to undo on
 OpenCode), so it is stored as an informational provenance column and never added to any token
-total. `cacheWriteTokens` never appears — 0 of 321 — and DeepSeek has no cache-write billing, so
+total. **This was an inference from DeepSeek's schema with no local disambiguator** — DSH's usage
+object carries no `total` field — so it was probed against all 321 real events, and the inference
+holds: `reasoningTokens > outputTokens` occurs **0 times**, the maximum ratio is **0.9832** with 25
+events above 0.9 and none crossing 1, and `outputTokens == 0` never occurs while
+`reasoningTokens == 0` occurs 103 times. Additive is arithmetically impossible given `output` is
+never 0 and reasoning tracks just under it — the signature of a partition of a fixed total, not of
+two independent addends. `cacheWriteTokens` never appears — 0 of 321 — and DeepSeek has no cache-write billing, so
 the DSH path carries no cache-write column rather than a permanently-null one.
 
 A second trap sits adjacent: **`assistant/chunk` events also carry a usage object**, at
-`data.chunk.usage`, with values identical to the request's `assistant/message`. It is the same
-request carried twice, 1:1 in every session — not a running total. A tailer that selects "any
-event with usage" double-counts every request. The commit point is `assistant/message`, and only
-that.
+`data.chunk.usage` — **not** at `data.usage` — with values identical to the request's
+`assistant/message`. It is the same request carried twice, 1:1 in every session — not a running
+total. A tailer that selects "any event with usage" double-counts every request. The commit point
+is `assistant/message`, and only that.
+
+**Probe-confirmed on the current corpus, and sharper than originally stated.** The nesting matters
+more than the duplication: `usage` is attached to the chunk whose `data.chunk.type == "usage"`, so
+a lookup at `data.usage` finds **0 of 3,231** chunk lines — not a wrong number, nothing at all. Of
+the two errors a reader can make, the naive one is a silent empty result rather than a
+double-count, and the double-count needs a reader that scans for usage *anywhere* rather than at a
+path. The 1:1 pairing is exact in all 9 sessions (321 `assistant/message` against 321 usage
+chunks); the usage dicts are deep-equal in all 321 pairs with zero differences; and the usage
+chunk's `seq` is **exactly `message.seq − 2` in every pair, no exceptions** — a stable relationship
+a test can assert, and the anchor [ADR-0016](./0016-parser-fixtures-are-captured-from-real-data-and-scalar-reduced.md)'s
+duplicate-usage scenario is built on.
 
 ## `sync` and `watch` are wired; there is no hook
 
